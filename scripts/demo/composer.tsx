@@ -23,7 +23,7 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { AuthLab } from './auth-lab.jsx';
+import { AuthLab } from './auth-lab.tsx';
 import {
     ASSETS,
     BLOCKS,
@@ -32,20 +32,33 @@ import {
     template,
     inlineNodes,
     formatSelection
-} from './model.js';
-import { LANGUAGES, snippet } from './snippets.js';
+} from './model.ts';
+import type { renderDocument } from './render.ts';
+import { LANGUAGES, snippet } from './snippets.ts';
+import type {
+    Alignment,
+    Attachment,
+    Block,
+    BlockType,
+    EmailDocument,
+    InlineNode,
+    StudioState
+} from './types.ts';
+import { asError } from './types.ts';
 
-const token = document.querySelector('meta[name="demo-token"]').content;
+const token = document.querySelector<HTMLMetaElement>(
+    'meta[name="demo-token"]'
+)!.content;
 const storageKey = 'clerk-release-lab-email-studio-v2';
-function readDraft() {
+function readDraft(): EmailDocument {
     try {
-        const doc = JSON.parse(localStorage.getItem(storageKey));
+        const doc = JSON.parse(localStorage.getItem(storageKey) || 'null');
         return doc?.blocks?.length ? doc : template();
     } catch {
         return template();
     }
 }
-function download(name, content, type = 'text/plain') {
+function download(name: string, content: BlobPart, type = 'text/plain') {
     const url = URL.createObjectURL(new Blob([content], { type }));
     const link = document.createElement('a');
     link.href = url;
@@ -53,7 +66,23 @@ function download(name, content, type = 'text/plain') {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function Field({ label, value, onChange, multiline = false, ...props }) {
+type FieldProps = Omit<
+    React.InputHTMLAttributes<HTMLInputElement> &
+        React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+    'value' | 'onChange'
+> & {
+    label: string;
+    value?: string | number;
+    multiline?: boolean;
+    onChange: (value: string) => void;
+};
+function Field({
+    label,
+    value,
+    onChange,
+    multiline = false,
+    ...props
+}: FieldProps) {
     const Tag = multiline ? 'textarea' : 'input';
     return (
         <label className="field">
@@ -66,7 +95,11 @@ function Field({ label, value, onChange, multiline = false, ...props }) {
         </label>
     );
 }
-function IconButton({ label, children, ...props }) {
+function IconButton({
+    label,
+    children,
+    ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
     return (
         <button
             className="icon-button"
@@ -79,8 +112,8 @@ function IconButton({ label, children, ...props }) {
     );
 }
 
-function RichContent({ text, doc }) {
-    function nodes(items) {
+function RichContent({ text, doc }: { text: unknown; doc: EmailDocument }) {
+    function nodes(items: InlineNode[]): React.ReactNode[] {
         return items.map((item, key) =>
             typeof item === 'string'
                 ? personalize(item, doc)
@@ -90,13 +123,19 @@ function RichContent({ text, doc }) {
     return nodes(inlineNodes(text));
 }
 
-function TextEditor({ block, onChange }) {
-    const input = useRef(null);
+function TextEditor({
+    block,
+    onChange
+}: {
+    block: Block;
+    onChange: (values: Partial<Block>) => void;
+}) {
+    const input = useRef<HTMLTextAreaElement>(null);
     const [hint, setHint] = useState(
         'Select words below, then choose a format. Click again to remove it.'
     );
-    function format(marker) {
-        const field = input.current;
+    function format(marker: string) {
+        const field = input.current!;
         if (field.selectionStart === field.selectionEnd) {
             setHint('Select the words you want to format first.');
             field.focus();
@@ -124,12 +163,14 @@ function TextEditor({ block, onChange }) {
                 role="group"
                 aria-label="Text formatting"
             >
-                {[
-                    ['Bold', '**', <b key="b">B</b>],
-                    ['Italic', '*', <i key="i">I</i>],
-                    ['Underline', '__', <u key="u">U</u>],
-                    ['Strikethrough', '~~', <s key="s">S</s>]
-                ].map(([label, marker, icon]) => (
+                {(
+                    [
+                        ['Bold', '**', <b key="b">B</b>],
+                        ['Italic', '*', <i key="i">I</i>],
+                        ['Underline', '__', <u key="u">U</u>],
+                        ['Strikethrough', '~~', <s key="s">S</s>]
+                    ] as [string, string, React.ReactNode][]
+                ).map(([label, marker, icon]) => (
                     <button
                         key={label}
                         type="button"
@@ -150,9 +191,12 @@ function TextEditor({ block, onChange }) {
                     rows={block.type === 'text' ? 7 : 3}
                     onChange={event => onChange({ text: event.target.value })}
                     onKeyDown={event => {
-                        const marker = { b: '**', i: '*', u: '__' }[
-                            event.key.toLowerCase()
-                        ];
+                        const marker = (
+                            { b: '**', i: '*', u: '__' } as Record<
+                                string,
+                                string
+                            >
+                        )[event.key.toLowerCase()];
                         if ((event.ctrlKey || event.metaKey) && marker) {
                             event.preventDefault();
                             format(marker);
@@ -168,7 +212,9 @@ function TextEditor({ block, onChange }) {
                 <span>Alignment</span>
                 <select
                     value={block.align || 'left'}
-                    onChange={event => onChange({ align: event.target.value })}
+                    onChange={event =>
+                        onChange({ align: event.target.value as Alignment })
+                    }
                 >
                     {['left', 'center', 'right', 'justify'].map(align => (
                         <option key={align} value={align}>
@@ -212,7 +258,7 @@ function Mark() {
     );
 }
 
-function BlockContent({ block, doc }) {
+function BlockContent({ block, doc }: { block: Block; doc: EmailDocument }) {
     const text = personalize(block.text, doc);
     if (block.type === 'heading') {
         return (
@@ -298,25 +344,31 @@ function BlockContent({ block, doc }) {
 }
 
 function App() {
-    const [history, setHistory] = useState({
+    const [history, setHistory] = useState<{
+        past: EmailDocument[];
+        present: EmailDocument;
+        future: EmailDocument[];
+    }>({
         past: [],
         present: readDraft(),
         future: []
     });
     const doc = history.present;
-    const [selected, setSelected] = useState(null);
+    const [selected, setSelected] = useState<string | null>(null);
     const [leftTab, setLeftTab] = useState('blocks');
     const [mode, setMode] = useState('design');
     const [viewport, setViewport] = useState('desktop');
     const [language, setLanguage] = useState('typescript');
     const [codeOpen, setCodeOpen] = useState(true);
-    const [rendered, setRendered] = useState(null);
+    const [rendered, setRendered] = useState<Awaited<
+        ReturnType<typeof renderDocument>
+    > | null>(null);
     const [renderBusy, setRendering] = useState(true);
     const rendering =
         renderBusy ||
         !rendered ||
         JSON.stringify(rendered.document) !== JSON.stringify(doc);
-    const [server, setServer] = useState(null);
+    const [server, setServer] = useState<StudioState | null>(null);
     const [notice, setNotice] = useState('Loading studio…');
     const [error, setError] = useState(false);
     const [showSend, setShowSend] = useState(false);
@@ -326,7 +378,7 @@ function App() {
     const [cc, setCc] = useState('');
     const [bcc, setBcc] = useState('');
     const [replyTo, setReplyTo] = useState('');
-    const [attachments, setAttachments] = useState([]);
+    const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [transport, setTransport] = useState('api');
     const [keyNonce, setKeyNonce] = useState(0);
     const messageSignature = JSON.stringify({
@@ -348,27 +400,29 @@ function App() {
         return `rack_demo_${(hash >>> 0).toString(16)}_${crypto.randomUUID()}`;
     }, [messageSignature]);
     const [copied, setCopied] = useState(false);
-    const [dropAt, setDropAt] = useState(null);
+    const [dropAt, setDropAt] = useState<number | null>(null);
     const renderSequence = useRef(0);
-    const dragging = useRef(null);
+    const dragging = useRef<{ type?: BlockType; id?: string } | null>(null);
     const attachmentSequence = useRef(0);
     const selectedBlock = doc.blocks.find(block => block.id === selected);
 
-    function tell(message, bad = false) {
+    function tell(message: string, bad = false) {
         setNotice(message);
         setError(bad);
     }
-    function change(next) {
+    function change(
+        next: EmailDocument | ((doc: EmailDocument) => EmailDocument)
+    ) {
         setHistory(previous => ({
             past: [...previous.past, previous.present].slice(-60),
             present: typeof next === 'function' ? next(previous.present) : next,
             future: []
         }));
     }
-    function updateDoc(values) {
+    function updateDoc(values: Partial<EmailDocument>) {
         change(current => ({ ...current, ...values }));
     }
-    function updateBlock(values) {
+    function updateBlock(values: Partial<Block>) {
         change(current => ({
             ...current,
             blocks: current.blocks.map(block =>
@@ -381,7 +435,7 @@ function App() {
             current.past.length
                 ? {
                       past: current.past.slice(0, -1),
-                      present: current.past.at(-1),
+                      present: current.past.at(-1)!,
                       future: [current.present, ...current.future]
                   }
                 : current
@@ -398,7 +452,7 @@ function App() {
                 : current
         );
     }
-    function addBlock(type, index = doc.blocks.length) {
+    function addBlock(type: BlockType, index = doc.blocks.length) {
         if (doc.blocks.length >= 40) {
             tell('This demo supports up to 40 blocks.', true);
             return;
@@ -415,7 +469,7 @@ function App() {
         setSelected(block.id);
         setLeftTab('properties');
     }
-    function moveBlock(id, index) {
+    function moveBlock(id: string, index: number) {
         change(current => {
             const old = current.blocks.findIndex(block => block.id === id);
             const blocks = [...current.blocks];
@@ -428,7 +482,7 @@ function App() {
             return { ...current, blocks };
         });
     }
-    function removeBlock(id) {
+    function removeBlock(id: string) {
         if (doc.blocks.length === 1) {
             tell('Keep at least one content block.', true);
             return;
@@ -441,7 +495,7 @@ function App() {
             setSelected(null);
         }
     }
-    function duplicateBlock(id) {
+    function duplicateBlock(id: string) {
         if (doc.blocks.length >= 40) {
             return;
         }
@@ -457,7 +511,10 @@ function App() {
         }));
         setSelected(block.id);
     }
-    function drag(event, data) {
+    function drag(
+        event: React.DragEvent,
+        data: { type?: BlockType; id?: string }
+    ) {
         dragging.current = data;
         event.dataTransfer.effectAllowed = data.type ? 'copy' : 'move';
         event.dataTransfer.setData(
@@ -465,7 +522,7 @@ function App() {
             JSON.stringify(data)
         );
     }
-    function drop(event, index) {
+    function drop(event: React.DragEvent, index: number) {
         event.preventDefault();
         event.stopPropagation();
         const data = dragging.current;
@@ -478,10 +535,10 @@ function App() {
             addBlock(data.type, index);
         } else {
             const old = doc.blocks.findIndex(block => block.id === data.id);
-            moveBlock(data.id, old < index ? index - 1 : index);
+            moveBlock(data.id!, old < index ? index - 1 : index);
         }
     }
-    async function api(action, body = {}) {
+    async function api(action: string, body: unknown = {}) {
         const response = await fetch(`/api/${action}`, {
             method: 'POST',
             headers: {
@@ -553,11 +610,13 @@ function App() {
         return () => clearTimeout(timer);
     }, [doc, server?.assetBase]);
     useEffect(() => {
-        function handle(event) {
+        function handle(event: KeyboardEvent) {
             if (
                 (event.ctrlKey || event.metaKey) &&
                 event.key.toLowerCase() === 'z' &&
-                !['INPUT', 'TEXTAREA'].includes(event.target.tagName)
+                !['INPUT', 'TEXTAREA'].includes(
+                    (event.target as HTMLElement).tagName
+                )
             ) {
                 event.preventDefault();
                 if (event.shiftKey) {
@@ -578,7 +637,7 @@ function App() {
         return () => clearInterval(timer);
     }, [server?.assetBase]);
 
-    function recipients(value) {
+    function recipients(value: string) {
         return value
             .split(',')
             .map(part => part.trim())
@@ -601,7 +660,8 @@ function App() {
         text: rendered?.text || '',
         ...(attachments.length ? { attachments } : {})
     };
-    const activeLanguage = LANGUAGES.find(item => item.id === language);
+    const activeLanguage =
+        LANGUAGES.find(item => item.id === language) || LANGUAGES[0];
     const code =
         language === 'json'
             ? JSON.stringify(envelope, null, 2)
@@ -609,7 +669,7 @@ function App() {
               ? rendered?.source || 'Rendering template…'
               : snippet(language, key);
 
-    async function send(action) {
+    async function send(action: string) {
         setBusy(true);
         try {
             const result = await api(action, {
@@ -647,16 +707,17 @@ function App() {
                     true
                 );
             }
-        } catch (err) {
+        } catch (caught) {
+            const err = asError(caught);
             tell(err.message, true);
             await refresh().catch(() => {});
         } finally {
             setBusy(false);
         }
     }
-    async function files(event) {
+    async function files(event: React.ChangeEvent<HTMLInputElement>) {
         const sequence = ++attachmentSequence.current;
-        const chosen = [...event.target.files];
+        const chosen = [...(event.target.files || [])];
         if (
             chosen.length > 10 ||
             chosen.reduce((sum, file) => sum + file.size, 0) > 1048576
@@ -668,7 +729,7 @@ function App() {
         const values = await Promise.all(
             chosen.map(
                 file =>
-                    new Promise((resolve, reject) => {
+                    new Promise<Attachment>((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onerror = reject;
                         reader.onload = () =>
@@ -825,11 +886,13 @@ function App() {
                             ))}
                         </div>
                         <div className="side-tabs">
-                            {[
-                                ['blocks', Layers, 'Blocks'],
-                                ['properties', Settings2, 'Properties'],
-                                ['settings', Settings2, 'Email']
-                            ].map(([id, Icon, name]) => (
+                            {(
+                                [
+                                    ['blocks', Layers, 'Blocks'],
+                                    ['properties', Settings2, 'Properties'],
+                                    ['settings', Settings2, 'Email']
+                                ] as const
+                            ).map(([id, Icon, name]) => (
                                 <button
                                     key={id}
                                     className={leftTab === id ? 'selected' : ''}
@@ -852,13 +915,17 @@ function App() {
                                                 key={type}
                                                 draggable
                                                 onDragStart={event =>
-                                                    drag(event, { type })
+                                                    drag(event, {
+                                                        type: type as BlockType
+                                                    })
                                                 }
                                                 onDragEnd={() => {
                                                     dragging.current = null;
                                                     setDropAt(null);
                                                 }}
-                                                onClick={() => addBlock(type)}
+                                                onClick={() =>
+                                                    addBlock(type as BlockType)
+                                                }
                                             >
                                                 <b>{block.icon}</b>
                                                 <span>{block.label}</span>
@@ -945,12 +1012,7 @@ function App() {
                                                     selectedBlock.type !==
                                                     'button'
                                                 }
-                                                rows={
-                                                    selectedBlock.type ===
-                                                    'text'
-                                                        ? 6
-                                                        : 3
-                                                }
+                                                rows={3}
                                             />
                                         )}
                                         {selectedBlock.type === 'image' && (
@@ -967,7 +1029,7 @@ function App() {
                                                             updateBlock({
                                                                 asset: event
                                                                     .target
-                                                                    .value
+                                                                    .value as Alignment
                                                             })
                                                         }
                                                     >
@@ -1034,7 +1096,7 @@ function App() {
                                                             updateBlock({
                                                                 align: event
                                                                     .target
-                                                                    .value
+                                                                    .value as Alignment
                                                             })
                                                         }
                                                     >
@@ -1174,7 +1236,8 @@ function App() {
                                         value={doc.theme}
                                         onChange={event =>
                                             updateDoc({
-                                                theme: event.target.value
+                                                theme: event.target
+                                                    .value as EmailDocument['theme']
                                             })
                                         }
                                     >
@@ -1202,7 +1265,7 @@ function App() {
                                         onChange={async event => {
                                             try {
                                                 const file =
-                                                    event.target.files[0];
+                                                    event.target.files?.[0];
                                                 if (!file) {
                                                     return;
                                                 }
@@ -1220,7 +1283,8 @@ function App() {
                                                 change(value);
                                                 setSelected(null);
                                                 tell('Draft imported.');
-                                            } catch (err) {
+                                            } catch (caught) {
+                                                const err = asError(caught);
                                                 tell(err.message, true);
                                             }
                                             event.target.value = '';
@@ -1298,12 +1362,14 @@ function App() {
                             {mode === 'design' && (
                                 <div
                                     className={`email-design ${doc.theme}`}
-                                    style={{
-                                        '--email-accent':
-                                            doc.theme === 'light'
-                                                ? '#8d6a1c'
-                                                : doc.accent
-                                    }}
+                                    style={
+                                        {
+                                            '--email-accent':
+                                                doc.theme === 'light'
+                                                    ? '#8d6a1c'
+                                                    : doc.accent
+                                        } as React.CSSProperties
+                                    }
                                 >
                                     <div className="email-brand">
                                         <Mark />
@@ -1336,7 +1402,7 @@ function App() {
                                                 onDrop={event =>
                                                     drop(event, index)
                                                 }
-                                                tabIndex="0"
+                                                tabIndex={0}
                                                 onKeyDown={event => {
                                                     if (event.key === 'Enter') {
                                                         setSelected(block.id);
@@ -1588,7 +1654,7 @@ function App() {
                                 onClick={() =>
                                     download(
                                         'clerk-release-lab-email.html',
-                                        rendered.html,
+                                        rendered!.html,
                                         'text/html'
                                     )
                                 }
@@ -1601,7 +1667,7 @@ function App() {
                                 onClick={() =>
                                     download(
                                         'clerk-release-lab-email.txt',
-                                        rendered.text
+                                        rendered!.text
                                     )
                                 }
                             >
@@ -1613,7 +1679,7 @@ function App() {
                                 onClick={() =>
                                     download(
                                         'clerk-release-lab-email.mjs',
-                                        rendered.source,
+                                        rendered!.source,
                                         'text/javascript'
                                     )
                                 }
@@ -1755,7 +1821,7 @@ function App() {
                         <form
                             onSubmit={event => {
                                 event.preventDefault();
-                                send('send');
+                                void send('send');
                             }}
                         >
                             <div className="recipient-mode">
@@ -1918,7 +1984,7 @@ function DemoShell() {
             ? location.hash.slice(1)
             : 'email'
     );
-    function choose(next) {
+    function choose(next: string) {
         setView(next);
         window.history.replaceState(null, '', `#${next}`);
     }
@@ -1949,4 +2015,4 @@ function DemoShell() {
     );
 }
 
-createRoot(document.getElementById('root')).render(<DemoShell />);
+createRoot(document.getElementById('root')!).render(<DemoShell />);

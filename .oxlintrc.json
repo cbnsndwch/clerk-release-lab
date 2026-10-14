@@ -4,13 +4,14 @@
         "correctness": "warn"
     },
     "options": {
-        "maxWarnings": 0
+        "maxWarnings": 0,
+        "typeAware": true
     },
     "env": {
         "node": true,
         "es2024": true
     },
-    "plugins": ["import", "react"],
+    "plugins": ["import", "react", "typescript"],
     "rules": {
         "curly": ["error", "all"],
         "import/newline-after-import": [
@@ -35,7 +36,7 @@
     ],
     "overrides": [
         {
-            "files": ["**/*.jsx"],
+            "files": ["**/*.tsx"],
             "env": {
                 "browser": true,
                 "node": false

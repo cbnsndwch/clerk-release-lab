@@ -115,7 +115,7 @@ export const LANGUAGES = [
     }
 ];
 
-export function snippet(id, key = 'rack_demo_replace_with_unique_key') {
+export function snippet(id: string, key = 'rack_demo_replace_with_unique_key') {
     const jsKey = JSON.stringify(key);
     const commonJs = `import { readFile } from 'node:fs/promises';\n\n// Download message.json from the composer.\nconst message = JSON.parse(await readFile('message.json', 'utf8'));\nconst { reply_to, to, ...content } = message;\nconst payload = {\n  ...content,\n  to: to.user_id ? { userId: to.user_id } : to,\n  ...(reply_to ? { replyTo: reply_to } : {}),\n};\n`;
     if (id === 'typescript') {

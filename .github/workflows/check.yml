@@ -26,6 +26,8 @@ jobs:
         run: pnpm format:check
       - name: Lint (oxlint)
         run: pnpm lint
+      - name: Typecheck (strict TypeScript)
+        run: pnpm typecheck
       - name: Build and test
         run: pnpm test
       - name: Privacy audit

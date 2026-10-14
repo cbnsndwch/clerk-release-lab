@@ -5,7 +5,7 @@ import { build } from 'esbuild';
 
 const here = dirname(fileURLToPath(import.meta.url));
 await build({
-    entryPoints: [resolve(here, 'composer.jsx')],
+    entryPoints: [resolve(here, 'composer.tsx')],
     bundle: true,
     outfile: resolve(here, '../../.local/demo/composer.js'),
     jsx: 'automatic',

@@ -1,21 +1,22 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
 import { createServer } from 'node:net';
 import test from 'node:test';
 
 async function freePort() {
     const server = createServer();
-    await new Promise(done => server.listen(0, '127.0.0.1', done));
-    const port = server.address().port;
-    await new Promise(done => server.close(done));
+    await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
+    const port = (server.address() as AddressInfo).port;
+    await new Promise<void>(done => server.close(() => done()));
     return port;
 }
 
-test('fresh standalone startup previews locally without credentials and blocks all sends', async t => {
+void test('fresh standalone startup previews locally without credentials and blocks all sends', async t => {
     const port = await freePort();
     const assetPort = await freePort();
-    const child = spawn(process.execPath, ['scripts/demo/email.mjs'], {
+    const child = spawn(process.execPath, ['scripts/demo/email.ts'], {
         env: {
             ...process.env,
             CLERK_EMAIL_SECRET_KEY: '',
@@ -44,14 +45,14 @@ test('fresh standalone startup previews locally without credentials and blocks a
             state = await (await fetch(`${base}/api/state`)).json();
             break;
         } catch {
-            await new Promise(done => setTimeout(done, 100));
+            await new Promise<void>(done => setTimeout(done, 100));
         }
     }
     assert.ok(state, 'preview server started');
     assert.equal(state.domain, 'example.com');
     assert.equal(state.emailEnabled, false);
     const page = await (await fetch(base)).text();
-    const token = page.match(/name="demo-token" content="([^"]+)"/)[1];
+    const token = page.match(/name="demo-token" content="([^"]+)"/)![1];
     const response = await fetch(`${base}/api/send`, {
         method: 'POST',
         headers: {

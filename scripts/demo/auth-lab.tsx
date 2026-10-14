@@ -1,3 +1,7 @@
+import type { AuthDemo } from './auth.ts';
+import type { Discovery, TemplateResult } from './types.ts';
+
+type AuthSnapshot = ReturnType<AuthDemo['snapshot']>;
 import {
     ArrowUpRight,
     Check,
@@ -14,16 +18,20 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-const csrf = document.querySelector('meta[name="demo-token"]').content;
-function stamp(value) {
+import { asError } from './types.ts';
+
+const csrf = document.querySelector<HTMLMetaElement>(
+    'meta[name="demo-token"]'
+)!.content;
+function stamp(value: string) {
     return new Date(value).toLocaleTimeString('en-US', {
         hour12: false,
         timeZone: 'America/New_York'
     });
 }
 
-function wireCode(view, tab, data) {
-    const discovery = data?.discovery || {};
+function wireCode(view: string, tab: string, data: AuthSnapshot | null) {
+    const discovery: Partial<Discovery> = data?.discovery || {};
     const clientId = data?.client?.client_id || '<PUBLIC_CLIENT_ID>';
     if (view === 'device') {
         if (tab === 'poll') {
@@ -50,8 +58,8 @@ function wireCode(view, tab, data) {
     );
 }
 
-export function AuthLab({ view }) {
-    const [data, setData] = useState(null);
+export function AuthLab({ view }: { view: string }) {
+    const [data, setData] = useState<AuthSnapshot | null>(null);
     const [tab, setTab] = useState('request');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
@@ -75,20 +83,21 @@ export function AuthLab({ view }) {
                     setData(value);
                     setNow(Date.now());
                 }
-            } catch (err) {
+            } catch (caught) {
+                const err = asError(caught);
                 if (active) {
                     setError(err.message);
                 }
             }
         }
-        read();
+        void read();
         const interval = setInterval(read, 1000);
         return () => {
             active = false;
             clearInterval(interval);
         };
     }, []);
-    async function act(action) {
+    async function act(action: string) {
         setBusy(true);
         setError('');
         try {
@@ -105,7 +114,8 @@ export function AuthLab({ view }) {
                 throw new Error(value.error || 'OAuth request failed.');
             }
             setData(value);
-        } catch (err) {
+        } catch (caught) {
+            const err = asError(caught);
             setError(err.message);
         } finally {
             setBusy(false);
@@ -136,7 +146,7 @@ export function AuthLab({ view }) {
         0,
         Math.ceil(((session?.expiresAt || now) - now) / 1000)
     );
-    let result = null;
+    let result: TemplateResult | null = null;
     try {
         result = JSON.parse(
             data?.cimd?.toolResult?.at(-1)?.result?.content?.[0]?.text || 'null'
@@ -208,14 +218,14 @@ export function AuthLab({ view }) {
                                         No browser. No password field. No client
                                         secret.
                                     </p>
-                                    {session?.userCode &&
-                                    session.phase === 'pending' ? (
+                                    {data?.device?.userCode &&
+                                    session?.phase === 'pending' ? (
                                         <>
                                             <span className="terminal-label">
                                                 ENTER THIS CODE ON YOUR PHONE
                                             </span>
                                             <div className="device-code">
-                                                {session.userCode}
+                                                {data!.device!.userCode}
                                             </div>
                                             <div className="terminal-wait">
                                                 <i />
@@ -231,7 +241,7 @@ export function AuthLab({ view }) {
                                             </div>
                                             <p className="terminal-muted">
                                                 Poll interval:{' '}
-                                                {session.interval}s ·
+                                                {data!.device!.interval}s ·
                                                 device_code kept private
                                             </p>
                                         </>
@@ -242,10 +252,10 @@ export function AuthLab({ view }) {
                                                 Controller authorized.
                                             </strong>
                                             <p>
-                                                {session.profile?.name ||
-                                                    session.profile
+                                                {session!.profile?.name ||
+                                                    session!.profile
                                                         ?.preferred_username ||
-                                                    session.profile?.sub}
+                                                    session!.profile?.sub}
                                             </p>
                                             <span>
                                                 Access token received and kept
@@ -267,7 +277,7 @@ export function AuthLab({ view }) {
                                 <div className="phone-handoff">
                                     <div className="qr-card">
                                         <img
-                                            src={session.qr}
+                                            src={data!.device!.qr}
                                             alt="Scan to approve the Example Workshop device login"
                                         />
                                     </div>
@@ -282,13 +292,16 @@ export function AuthLab({ view }) {
                                             Clerk asks you to sign in first if
                                             you are signed out. The QR code
                                             pre-fills{' '}
-                                            <strong>{session.userCode}</strong>;
-                                            then confirm the code and approve
+                                            <strong>
+                                                {data!.device!.userCode}
+                                            </strong>
+                                            ; then confirm the code and approve
                                             access to Example Workshop.
                                         </p>
                                         <a
                                             href={
-                                                session.verificationUriComplete
+                                                data!.device!
+                                                    .verificationUriComplete
                                             }
                                             target="_blank"
                                             rel="noreferrer"
@@ -301,18 +314,22 @@ export function AuthLab({ view }) {
                                             use the manual link below. Sign in
                                             to the development Clerk account,
                                             then enter{' '}
-                                            <strong>{session.userCode}</strong>{' '}
+                                            <strong>
+                                                {data!.device!.userCode}
+                                            </strong>{' '}
                                             on the device verification page.
                                         </p>
                                         <a
-                                            href={session.verificationUri}
+                                            href={data!.device!.verificationUri}
                                             target="_blank"
                                             rel="noreferrer"
                                         >
                                             Enter code manually{' '}
                                             <ArrowUpRight size={13} />
                                         </a>
-                                        <code>{session.verificationUri}</code>
+                                        <code>
+                                            {data!.device!.verificationUri}
+                                        </code>
                                     </div>
                                 </div>
                             )}
@@ -473,7 +490,7 @@ export function AuthLab({ view }) {
                                       remaining > 0 ? (
                                         <a
                                             className="consent-link"
-                                            href={session.authorizationUrl}
+                                            href={data!.cimd!.authorizationUrl}
                                             target="_blank"
                                             rel="noreferrer"
                                         >
@@ -579,7 +596,7 @@ export function AuthLab({ view }) {
                                     </p>
                                     <a
                                         className="consent-link"
-                                        href={session.authorizationUrl}
+                                        href={data!.cimd!.authorizationUrl}
                                         target="_blank"
                                         rel="noreferrer"
                                     >
@@ -594,10 +611,10 @@ export function AuthLab({ view }) {
                                         <Check size={19} />
                                         <strong>Client connected.</strong>
                                         <span>
-                                            {session.profile?.name ||
-                                                session.profile
+                                            {session!.profile?.name ||
+                                                session!.profile
                                                     ?.preferred_username ||
-                                                session.profile?.sub}
+                                                session!.profile?.sub}
                                         </span>
                                     </div>
                                     <p>
@@ -814,11 +831,15 @@ export function AuthLab({ view }) {
                             </pre>
                         </details>
                     )}
-                    {session?.toolResult && (
+                    {data?.cimd?.toolResult && (
                         <details className="lab-token-summary">
                             <summary>Full MCP responses</summary>
                             <pre>
-                                {JSON.stringify(session.toolResult, null, 2)}
+                                {JSON.stringify(
+                                    data!.cimd!.toolResult,
+                                    null,
+                                    2
+                                )}
                             </pre>
                         </details>
                     )}

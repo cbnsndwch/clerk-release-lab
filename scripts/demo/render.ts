@@ -17,12 +17,13 @@ import {
     toPlainText
 } from 'react-email';
 
-import { ASSETS, personalize, inlineNodes, validateDocument } from './model.js';
+import { ASSETS, personalize, inlineNodes, validateDocument } from './model.ts';
+import type { EmailDocument, InlineNode } from './types.ts';
 
 const h = React.createElement;
 
-function richText(text, doc) {
-    function nodes(items) {
+function richText(text: unknown, doc: EmailDocument) {
+    function nodes(items: InlineNode[]): React.ReactNode[] {
         return items.map((item, key) =>
             typeof item === 'string'
                 ? personalize(item, doc)
@@ -32,7 +33,13 @@ function richText(text, doc) {
     return nodes(inlineNodes(text));
 }
 
-export function WorkshopEmail({ document: doc, assetBase }) {
+export function WorkshopEmail({
+    document: doc,
+    assetBase
+}: {
+    document: EmailDocument;
+    assetBase: string;
+}) {
     const dark = doc.theme === 'dark';
     const background = dark ? '#0c0e11' : '#edefee';
     const surface = dark ? '#14171b' : '#ffffff';
@@ -82,7 +89,7 @@ export function WorkshopEmail({ document: doc, assetBase }) {
                 Section,
                 { key, style: { margin: '24px 0' } },
                 h(Img, {
-                    src: `${assetBase}/${asset.file}`,
+                    src: `${assetBase}/${asset!.file}`,
                     alt: personalize(block.alt, doc),
                     width: 536,
                     style: { width: '100%', height: 'auto', borderRadius: 8 }
@@ -99,7 +106,7 @@ export function WorkshopEmail({ document: doc, assetBase }) {
                     },
                     personalize(block.caption, doc)
                 ),
-                asset.id === 'compute-shelf'
+                asset!.id === 'compute-shelf'
                     ? h(
                           Text,
                           {
@@ -110,7 +117,7 @@ export function WorkshopEmail({ document: doc, assetBase }) {
                                   margin: '4px 0 0'
                               }
                           },
-                          asset.credit
+                          asset!.credit
                       )
                     : null
             );
@@ -173,7 +180,7 @@ export function WorkshopEmail({ document: doc, assetBase }) {
                 },
                 h(
                     Row,
-                    {},
+                    { children: [] },
                     ...String(block.values)
                         .split('\n')
                         .slice(0, 3)
@@ -222,7 +229,7 @@ export function WorkshopEmail({ document: doc, assetBase }) {
         Html,
         { lang: 'en' },
         h(Head),
-        h(Preview, {}, personalize(doc.preheader, doc)),
+        h(Preview, { children: personalize(doc.preheader, doc) }),
         h(
             Body,
             {
@@ -297,7 +304,10 @@ export function WorkshopEmail({ document: doc, assetBase }) {
     );
 }
 
-export async function renderDocument(document, assetBase) {
+export async function renderDocument(
+    document: EmailDocument,
+    assetBase: string
+) {
     const doc = validateDocument(document);
     const html = await render(h(WorkshopEmail, { document: doc, assetBase }));
     const text = toPlainText(html);

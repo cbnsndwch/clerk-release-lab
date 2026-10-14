@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const rules = [
+import { asError } from './demo/types.ts';
+
+const rules: [string, RegExp][] = [
     [
         'credential',
         /\b(?:sk|pk)_(?:live|test)_[A-Za-z0-9_-]{20,}|\bgh[pousr]_[A-Za-z0-9]{30,}|\bgithub_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/
@@ -24,8 +26,8 @@ const rules = [
     ]
 ];
 
-export function inspect(path, bytes) {
-    const failures = [];
+export function inspect(path: string, bytes: Buffer) {
+    const failures: string[] = [];
     if (
         /(?:^|\/)(?:\.local|node_modules|raw_inputs)(?:\/|$)|(?:^|\/)\.env(?:\.|$)/.test(
             path
@@ -72,14 +74,14 @@ export function inspect(path, bytes) {
     return [...new Set(failures)];
 }
 
-function git(...args) {
+function git(...args: string[]) {
     return execFileSync('git', args, { maxBuffer: 32 * 1024 * 1024 });
 }
 
 export function auditRepository() {
-    const failures = [];
+    const failures: string[] = [];
     let checked = 0;
-    function check(label, path, bytes) {
+    function check(label: string, path: string, bytes: Buffer) {
         checked++;
         for (const issue of inspect(path, bytes)) {
             failures.push(`${label}: ${issue}`);
@@ -135,7 +137,8 @@ if (
         console.log(
             `Privacy audit passed: ${auditRepository()} staged, tracked, and historical content checks.`
         );
-    } catch (error) {
+    } catch (caught) {
+        const error = asError(caught);
         console.error(error.message);
         process.exitCode = 1;
     }

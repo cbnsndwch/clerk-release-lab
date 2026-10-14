@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import test from 'node:test';
@@ -8,16 +9,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { createClerkClient } from '@clerk/backend';
 
-import { EmailDemo, createAssetServer } from './email.mjs';
+import { EmailDemo, createAssetServer } from './email.ts';
 import {
     template,
     validateDocument,
     inlineNodes,
     formatSelection
-} from './model.js';
-import { renderDocument } from './render.mjs';
+} from './model.ts';
+import { renderDocument } from './render.ts';
+import type { Alignment, EmailBody } from './types.ts';
 
-test('all branded templates render sample GIF URLs, personalization, text and email-safe HTML', async () => {
+void test('all branded templates render sample GIF URLs, personalization, text and email-safe HTML', async () => {
     for (const id of ['ready', 'community', 'parts']) {
         const doc = template(id);
         doc.firstName = '<script>alert(1)</script>';
@@ -33,18 +35,18 @@ test('all branded templates render sample GIF URLs, personalization, text and em
         }
     }
     const bad = template();
-    bad.blocks.find(block => block.type === 'button').url =
+    bad.blocks.find(block => block.type === 'button')!.url =
         'javascript:alert(1)';
     assert.throws(() => validateDocument(bad), /HTTPS/);
 });
 
-test('exported React Email module reproduces the exact HTML and text', async t => {
+void test('exported React Email module reproduces the exact HTML and text', async t => {
     const here = dirname(fileURLToPath(import.meta.url));
     const dir = await mkdtemp(resolve(here, '../../.local/demo/export-test-'));
     t.after(() => rm(dir, { recursive: true, force: true }));
     const doc = template('community');
     Object.assign(
-        doc.blocks.find(block => block.type === 'text'),
+        doc.blocks.find(block => block.type === 'text')!,
         {
             align: 'justify',
             text: '**Hello *builder* today**, __underlined__, ~~old~~. {{firstName}}'
@@ -58,13 +60,13 @@ test('exported React Email module reproduces the exact HTML and text', async t =
     assert.equal(exported.text, result.text);
 });
 
-test('paragraph formatting renders safely, survives personalization and supports all alignments', async () => {
+void test('paragraph formatting renders safely, survives personalization and supports all alignments', async () => {
     const doc = template();
-    const block = doc.blocks.find(item => item.type === 'text');
+    const block = doc.blocks.find(item => item.type === 'text')!;
     block.text =
         '**Bold and *italic* together**; __underline__; ~~strike~~; <img src=x onerror=alert(1)> {{firstName}}';
     doc.firstName = '**plain personal data**';
-    for (const align of ['left', 'center', 'right', 'justify']) {
+    for (const align of ['left', 'center', 'right', 'justify'] as const) {
         block.align = align;
         const output = await renderDocument(doc, 'https://assets.example.com');
         assert.ok(output.html.includes(`text-align:${align}`));
@@ -79,7 +81,7 @@ test('paragraph formatting renders safely, survives personalization and supports
         assert.ok(output.html.includes('**plain personal data**'));
         assert.ok(output.text.includes('Bold and italic together'));
     }
-    block.align = 'invalid';
+    block.align = 'invalid' as Alignment;
     assert.throws(() => validateDocument(doc), /alignment/);
     assert.deepEqual(inlineNodes('unmatched ** stays literal'), [
         'unmatched ** stays literal'
@@ -94,8 +96,8 @@ test('paragraph formatting renders safely, survives personalization and supports
     assert.equal(formatSelection('hello', 0, 0, '**').text, 'hello');
 });
 
-test('real JS SDK and direct HTTP serialize the same frozen message and key', async t => {
-    const calls = [];
+void test('real JS SDK and direct HTTP serialize the same frozen message and key', async t => {
+    const calls: { body: EmailBody; key: string | string[] | undefined }[] = [];
     const provider = createServer(async (req, res) => {
         let raw = '';
         for await (const chunk of req) {
@@ -114,9 +116,9 @@ test('real JS SDK and direct HTTP serialize the same frozen message and key', as
             })
         );
     });
-    await new Promise(done => provider.listen(0, '127.0.0.1', done));
-    t.after(() => new Promise(done => provider.close(done)));
-    const base = `http://127.0.0.1:${provider.address().port}`;
+    await new Promise<void>(done => provider.listen(0, '127.0.0.1', done));
+    t.after(() => new Promise<void>(done => provider.close(() => done())));
+    const base = `http://127.0.0.1:${(provider.address() as AddressInfo).port}`;
     const clerk = createClerkClient({
         secretKey: 'sk_live_TEST_ONLY',
         apiUrl: base
@@ -146,8 +148,8 @@ test('real JS SDK and direct HTTP serialize the same frozen message and key', as
     assert.equal(calls.length, 2);
     assert.deepEqual(calls[1], calls[0]);
     assert.deepEqual(calls[0].body.to, { user_id: 'user_demo123' });
-    assert.equal(calls[0].body.reply_to.address, 'support@example.org');
-    assert.equal(calls[0].body.attachments[0].content, 'aGVsbG8=');
+    assert.equal(calls[0].body.reply_to!.address, 'support@example.org');
+    assert.equal(calls[0].body.attachments![0].content, 'aGVsbG8=');
     assert.equal(calls[0].key, 'test_shared_key');
     await demo.act('reset');
     await assert.rejects(
@@ -157,11 +159,11 @@ test('real JS SDK and direct HTTP serialize the same frozen message and key', as
     assert.equal(calls.length, 2);
 });
 
-test('public asset server exposes only the two GIFs, never the composer, state or files', async t => {
+void test('public asset server exposes only the two GIFs, never the composer, state or files', async t => {
     const server = createAssetServer();
-    await new Promise(done => server.listen(0, '127.0.0.1', done));
-    t.after(() => new Promise(done => server.close(done)));
-    const base = `http://127.0.0.1:${server.address().port}`;
+    await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
+    t.after(() => new Promise<void>(done => server.close(() => done())));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     for (const path of [
         '/',
         '/api/state',

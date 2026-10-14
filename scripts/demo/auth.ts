@@ -1,8 +1,23 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { dirname } from 'node:path';
 
 import QRCode from 'qrcode';
+
+import type {
+    CimdSession,
+    DeviceSession,
+    Discovery,
+    FetchImpl,
+    OAuthClient,
+    OAuthConfig,
+    OAuthEvent,
+    Profile,
+    ProviderResponse,
+    Tokens
+} from './types.ts';
+import { asError } from './types.ts';
 
 const bapi = 'https://api.clerk.com/v1';
 const scope = 'openid profile';
@@ -11,12 +26,12 @@ const mcpName = 'Example Workshop Hack Night MCP Client';
 function random() {
     return randomBytes(32).toString('base64url');
 }
-function equal(a, b) {
+function equal(a: string | null | undefined, b: string | null | undefined) {
     const left = Buffer.from(a || '');
     const right = Buffer.from(b || '');
     return left.length === right.length && timingSafeEqual(left, right);
 }
-function summary(tokens) {
+function summary(tokens: Tokens) {
     return {
         token_type: tokens.token_type,
         expires_in: tokens.expires_in,
@@ -26,7 +41,7 @@ function summary(tokens) {
         id_token: Boolean(tokens.id_token)
     };
 }
-function identity(profile) {
+function identity(profile: Profile) {
     return {
         sub: profile.sub,
         name: profile.name,
@@ -34,16 +49,47 @@ function identity(profile) {
     };
 }
 
+interface AuthOptions {
+    secretKey?: string;
+    configPath?: string;
+    getPublicBase?: () => string;
+    fetchImpl?: FetchImpl;
+    now?: () => number;
+    schedule?: (fn: () => void, delay: number) => NodeJS.Timeout | number;
+    cancel?: (timer: NodeJS.Timeout | number | null) => void;
+}
 export class AuthDemo {
+    declare secretKey: string;
+    declare configPath: string;
+    declare getPublicBase: () => string;
+    declare fetchImpl: FetchImpl;
+    declare now: () => number;
+    declare schedule: NonNullable<AuthOptions['schedule']>;
+    declare cancel: NonNullable<AuthOptions['cancel']>;
+    ready: boolean;
+    setupError: string | null;
+    client: OAuthClient | null;
+    discovery: Discovery | null;
+    device: DeviceSession | null;
+    cimd: CimdSession | null;
+    events: OAuthEvent[];
+    timer: NodeJS.Timeout | number | null;
+    metadataFetches: number;
+    frontend = '';
+
     constructor({
-        secretKey,
-        configPath,
-        getPublicBase,
+        secretKey = '',
+        configPath = '.local/demo/oauth-config.json',
+        getPublicBase = () => '',
         fetchImpl = fetch,
         now = Date.now,
-        schedule = setTimeout,
-        cancel = clearTimeout
-    }) {
+        schedule = (fn, delay) => setTimeout(fn, delay),
+        cancel = timer => {
+            if (timer !== null) {
+                clearTimeout(timer);
+            }
+        }
+    }: AuthOptions) {
         Object.assign(this, {
             secretKey,
             configPath,
@@ -63,7 +109,7 @@ export class AuthDemo {
         this.timer = null;
         this.metadataFetches = 0;
     }
-    log(flow, message, details = {}) {
+    log(flow: string, message: string, details: Record<string, unknown> = {}) {
         this.events.push({
             at: new Date(this.now()).toISOString(),
             flow,
@@ -72,16 +118,16 @@ export class AuthDemo {
         });
         this.events = this.events.slice(-80);
     }
-    async request(url, options = {}) {
+    async request(url: string, options: RequestInit = {}) {
         const response = await this.fetchImpl(url, {
             ...options,
             headers: {
                 'User-Agent': 'ClerkReleaseLab/3.0',
-                ...options.headers
+                ...Object.fromEntries(new Headers(options.headers))
             },
             signal: AbortSignal.timeout(15000)
         });
-        let data = {};
+        let data = {} as ProviderResponse;
         try {
             data = await response.json();
         } catch {
@@ -89,7 +135,7 @@ export class AuthDemo {
         }
         return { response, data };
     }
-    async backend(path, method = 'GET', body) {
+    async backend(path: string, method = 'GET', body?: unknown) {
         const { response, data } = await this.request(`${bapi}${path}`, {
             method,
             headers: {
@@ -105,7 +151,7 @@ export class AuthDemo {
         }
         return data;
     }
-    async saveConfig(config) {
+    async saveConfig(config: OAuthConfig) {
         await mkdir(dirname(this.configPath), { recursive: true, mode: 0o700 });
         await writeFile(
             `${this.configPath}.tmp`,
@@ -150,7 +196,8 @@ export class AuthDemo {
         ]) {
             if (
                 data[key] &&
-                new URL(data[key]).origin !== new URL(this.frontend).origin
+                new URL(typeof data[key] === 'string' ? data[key] : '')
+                    .origin !== new URL(this.frontend).origin
             ) {
                 throw new Error('Unexpected OAuth discovery origin.');
             }
@@ -159,10 +206,11 @@ export class AuthDemo {
         const settings = await this.backend(
             '/instance/oauth_application_settings'
         );
-        let previous = null;
+        let previous: OAuthConfig | null = null;
         try {
             previous = JSON.parse(await readFile(this.configPath, 'utf8'));
-        } catch (error) {
+        } catch (caught) {
+            const error = asError(caught);
             if (error.code !== 'ENOENT') {
                 throw error;
             }
@@ -227,7 +275,7 @@ export class AuthDemo {
         });
         this.ready = true;
         this.log('setup', 'Development OAuth labs ready', {
-            issuer: this.discovery.issuer,
+            issuer: this.discovery!.issuer,
             scopes: scope,
             production_settings_changed: false
         });
@@ -254,9 +302,9 @@ export class AuthDemo {
                 'Consent link expired. Prepare a fresh connection.';
             delete this.cimd.verifier;
             delete this.cimd.state;
-            delete this.cimd.authorizationUrl;
+            this.cimd.authorizationUrl = '';
         }
-        const metadata = this.metadata();
+        const metadata = this.metadata()!;
         return {
             ready: this.ready && Boolean(metadata),
             setupError: this.setupError,
@@ -311,9 +359,9 @@ export class AuthDemo {
             events: this.events
         };
     }
-    async profile(tokens) {
+    async profile(tokens: Tokens) {
         const { response, data } = await this.request(
-            this.discovery.userinfo_endpoint,
+            this.discovery!.userinfo_endpoint,
             {
                 headers: { Authorization: `Bearer ${tokens.access_token}` }
             }
@@ -323,7 +371,7 @@ export class AuthDemo {
         }
         return identity(data);
     }
-    async form(url, params) {
+    async form(url: string, params: Record<string, string>) {
         return this.request(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -337,12 +385,20 @@ export class AuthDemo {
             );
         }
         this.cancel(this.timer);
-        const session = { phase: 'starting' };
+        const session: DeviceSession = {
+            phase: 'starting',
+            userCode: '',
+            verificationUri: '',
+            verificationUriComplete: '',
+            qr: '',
+            interval: 0,
+            expiresAt: 0
+        };
         this.device = session;
         const { response, data } = await this.form(
-            this.discovery.device_authorization_endpoint,
+            this.discovery!.device_authorization_endpoint,
             {
-                client_id: this.client.client_id,
+                client_id: this.client!.client_id,
                 scope
             }
         );
@@ -391,7 +447,7 @@ export class AuthDemo {
         this.planPoll(session);
         return this.snapshot();
     }
-    planPoll(session) {
+    planPoll(session: DeviceSession) {
         if (this.device !== session || session.phase !== 'pending') {
             return;
         }
@@ -416,11 +472,11 @@ export class AuthDemo {
         }
         try {
             const { response, data } = await this.form(
-                this.discovery.token_endpoint,
+                this.discovery!.token_endpoint,
                 {
-                    client_id: this.client.client_id,
+                    client_id: this.client!.client_id,
                     grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-                    device_code: session.deviceCode
+                    device_code: session.deviceCode!
                 }
             );
             if (this.device !== session) {
@@ -474,7 +530,7 @@ export class AuthDemo {
                 this.setupError || 'Public client metadata is still starting.'
             );
         }
-        const metadata = this.metadata();
+        const metadata = this.metadata()!;
         const verifier = random();
         const state = random();
         const nonce = random();
@@ -500,7 +556,7 @@ export class AuthDemo {
             clientId: metadata.client_id,
             redirectUri: metadata.redirect_uris[0],
             expiresAt: this.now() + 600000,
-            authorizationUrl: `${this.discovery.authorization_endpoint}?${params}`
+            authorizationUrl: `${this.discovery!.authorization_endpoint}?${params}`
         };
         this.log(
             'cimd',
@@ -512,7 +568,7 @@ export class AuthDemo {
         );
         return this.snapshot();
     }
-    async callback(url) {
+    async callback(url: URL) {
         const session = this.cimd;
         if (
             !session ||
@@ -525,7 +581,7 @@ export class AuthDemo {
             );
         }
         const issuer = url.searchParams.get('iss');
-        if (issuer && issuer !== this.discovery.issuer) {
+        if (issuer && issuer !== this.discovery!.issuer) {
             throw new Error('OAuth issuer mismatch.');
         }
         session.phase = 'exchanging';
@@ -542,13 +598,13 @@ export class AuthDemo {
         }
         try {
             const { response, data } = await this.form(
-                this.discovery.token_endpoint,
+                this.discovery!.token_endpoint,
                 {
                     grant_type: 'authorization_code',
                     client_id: session.clientId,
                     redirect_uri: session.redirectUri,
                     code,
-                    code_verifier: session.verifier
+                    code_verifier: session.verifier!
                 }
             );
             if (!response.ok || !data.access_token) {
@@ -569,7 +625,8 @@ export class AuthDemo {
                     client_secret_used: false
                 }
             );
-        } catch (error) {
+        } catch (caught) {
+            const error = asError(caught);
             session.phase = 'error';
             session.error = error.message;
             throw error;
@@ -580,12 +637,13 @@ export class AuthDemo {
             throw new Error('Metadata URL is still starting.');
         }
         const { response, data } = await this.request(
-            this.metadata().client_id
+            this.metadata()!.client_id
         );
         if (
             !response.ok ||
-            data.client_id !== this.metadata().client_id ||
-            data.redirect_uris?.[0] !== this.metadata().redirect_uris[0]
+            data.client_id !== this.metadata()!.client_id ||
+            (data.redirect_uris as string[] | undefined)?.[0] !==
+                this.metadata()!.redirect_uris[0]
         ) {
             throw new Error('Public metadata failed validation.');
         }
@@ -654,7 +712,9 @@ export class AuthDemo {
     }
     async disconnect() {
         this.cancel(this.timer);
-        const tokens = [this.device?.tokens, this.cimd?.tokens].filter(Boolean);
+        const tokens = [this.device?.tokens, this.cimd?.tokens].filter(
+            (value): value is Tokens => Boolean(value)
+        );
         this.device = null;
         this.cimd = null;
         let failures = 0;
@@ -662,10 +722,10 @@ export class AuthDemo {
             for (const token of [
                 record.refresh_token,
                 record.access_token
-            ].filter(Boolean)) {
+            ].filter((value): value is string => Boolean(value))) {
                 try {
                     const { response } = await this.form(
-                        this.discovery.revocation_endpoint,
+                        this.discovery!.revocation_endpoint!,
                         { token }
                     );
                     if (!response.ok) {
@@ -685,7 +745,7 @@ export class AuthDemo {
         );
         return this.snapshot();
     }
-    async act(action) {
+    async act(action: string) {
         if (action === 'device/start') {
             return this.startDevice();
         }
@@ -703,9 +763,13 @@ export class AuthDemo {
         }
         throw new Error('Unknown OAuth demo action.');
     }
-    async publicRoute(request, response) {
-        const url = new URL(request.url, 'http://localhost');
-        function json(status, body, extra = {}) {
+    async publicRoute(request: IncomingMessage, response: ServerResponse) {
+        const url = new URL(request.url || '/', 'http://localhost');
+        function json(
+            status: number,
+            body: unknown,
+            extra: Record<string, string> = {}
+        ) {
             response.writeHead(status, {
                 'Content-Type': 'application/json',
                 'Cache-Control': 'no-store',
@@ -716,7 +780,7 @@ export class AuthDemo {
         }
         if (
             url.pathname === '/oauth/client-metadata.json' &&
-            ['GET', 'HEAD'].includes(request.method)
+            ['GET', 'HEAD'].includes(request.method || '')
         ) {
             if (!this.metadata()) {
                 json(503, { error: 'starting' });
@@ -774,7 +838,7 @@ export class AuthDemo {
                 return true;
             }
             if (
-                !(this.cimd.tokens.scope || scope)
+                !(this.cimd.tokens!.scope || scope)
                     .split(/\s+/)
                     .includes('profile')
             ) {
@@ -782,7 +846,7 @@ export class AuthDemo {
                 return true;
             }
             try {
-                await this.profile(this.cimd.tokens);
+                await this.profile(this.cimd.tokens!);
             } catch {
                 json(401, { error: 'token_invalid' });
                 return true;

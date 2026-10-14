@@ -1,3 +1,5 @@
+import type { Block, BlockType, EmailDocument, InlineNode } from './types.ts';
+
 export const ASSETS = [
     {
         id: 'starter-rack',
@@ -17,7 +19,10 @@ export const ASSETS = [
     }
 ];
 
-export const BLOCKS = {
+export const BLOCKS: Record<
+    BlockType,
+    Omit<Block, 'id' | 'type'> & { label: string; icon: string }
+> = {
     heading: { label: 'Heading', icon: 'T', text: 'Built for your next idea.' },
     text: {
         label: 'Paragraph',
@@ -47,12 +52,12 @@ export const BLOCKS = {
     spacer: { label: 'Spacer', icon: '↕', height: 24 }
 };
 
-export function newBlock(type) {
+export function newBlock(type: BlockType): Block {
     return { ...BLOCKS[type], type, id: crypto.randomUUID() };
 }
 
-export function template(which = 'ready') {
-    const doc = {
+export function template(which = 'ready'): EmailDocument {
+    const doc: EmailDocument = {
         template: which,
         name: 'Project ready',
         subject: 'Your {{projectName}} design is ready',
@@ -72,23 +77,31 @@ export function template(which = 'ready') {
             projectName: 'Compute Shelf'
         });
         doc.blocks = [
-            { type: 'heading', text: 'A build worth sharing.' },
+            {
+                type: 'heading',
+                id: crypto.randomUUID(),
+                text: 'A build worth sharing.'
+            },
             {
                 type: 'text',
+                id: crypto.randomUUID(),
                 text: 'Hi {{firstName}}, here’s {{projectName}}: an fictional compute shelf. Open the template, explore the layout, and make it yours.'
             },
             {
                 type: 'image',
+                id: crypto.randomUUID(),
                 asset: 'compute-shelf',
                 alt: 'The Compute Shelf cluster assembling shelf by shelf',
                 caption: 'A sample compute shelf.'
             },
             {
                 type: 'stats',
+                id: crypto.randomUUID(),
                 values: '8|Compute modules\n1|Wire shelf\n∞|Possibilities'
             },
             {
                 type: 'button',
+                id: crypto.randomUUID(),
                 text: 'Explore the build',
                 url: 'https://workshop.example.com',
                 align: 'center'
@@ -102,52 +115,69 @@ export function template(which = 'ready') {
             theme: 'light'
         });
         doc.blocks = [
-            { type: 'heading', text: 'From plan to parts.' },
+            {
+                type: 'heading',
+                id: crypto.randomUUID(),
+                text: 'From plan to parts.'
+            },
             {
                 type: 'text',
+                id: crypto.randomUUID(),
                 text: 'Hi {{firstName}}, your {{projectName}} sample build has a parts list. Review the dimensions before you buy, drill, or print.'
             },
             {
                 type: 'stats',
+                id: crypto.randomUUID(),
                 values: '34|Printed parts\n6U|Rack height\n1|Build plan'
             },
             {
                 type: 'image',
+                id: crypto.randomUUID(),
                 asset: 'starter-rack',
                 alt: 'Starter Rack project assembling in Example Workshop',
                 caption: 'Everything in its place.'
             },
             {
                 type: 'button',
+                id: crypto.randomUUID(),
                 text: 'Review your parts',
                 url: 'https://workshop.example.com',
                 align: 'left'
             },
-            { type: 'divider' },
+            { type: 'divider', id: crypto.randomUUID() },
             {
                 type: 'text',
+                id: crypto.randomUUID(),
                 text: 'These are sample project values for the email demo; they are not a fabrication approval.'
             }
         ];
     } else {
         doc.blocks = [
-            { type: 'heading', text: 'Your next build starts here.' },
+            {
+                type: 'heading',
+                id: crypto.randomUUID(),
+                text: 'Your next build starts here.'
+            },
             {
                 type: 'text',
+                id: crypto.randomUUID(),
                 text: 'Hi {{firstName}}, your {{projectName}} sample design is ready to explore. Plan the space, check the fit, and get one step closer to the workbench.'
             },
             {
                 type: 'image',
+                id: crypto.randomUUID(),
                 asset: 'starter-rack',
                 alt: 'Starter Rack project assembling in Example Workshop',
                 caption: 'Plan your rack before you build it.'
             },
             {
                 type: 'stats',
+                id: crypto.randomUUID(),
                 values: '6U|Rack height\n12|Components\n34|Printed parts'
             },
             {
                 type: 'button',
+                id: crypto.randomUUID(),
                 text: 'Open your project',
                 url: 'https://workshop.example.com',
                 align: 'left'
@@ -161,20 +191,28 @@ export function template(which = 'ready') {
     return doc;
 }
 
-export function personalize(text, doc) {
-    return String(text ?? '')
+export function personalize(
+    text: unknown,
+    doc: Pick<EmailDocument, 'firstName' | 'projectName'>
+) {
+    return (
+        typeof text === 'string' || typeof text === 'number' ? String(text) : ''
+    )
         .replaceAll('{{firstName}}', doc.firstName || 'builder')
         .replaceAll('{{projectName}}', doc.projectName || 'rack');
 }
 
 // A small, HTML-free inline format shared by the editor and email renderer.
-export function inlineNodes(text, depth = 0) {
-    text = String(text ?? '');
+export function inlineNodes(value: unknown, depth = 0): InlineNode[] {
+    const text =
+        typeof value === 'string' || typeof value === 'number'
+            ? String(value)
+            : '';
     if (depth > 16) {
         return [text];
     }
-    const nodes = [];
-    const markers = [
+    const nodes: InlineNode[] = [];
+    const markers: [string, 'strong' | 'em' | 'u' | 's'][] = [
         ['**', 'strong'],
         ['__', 'u'],
         ['~~', 's'],
@@ -209,7 +247,12 @@ export function inlineNodes(text, depth = 0) {
     return nodes;
 }
 
-export function formatSelection(text, start, end, marker) {
+export function formatSelection(
+    text: string,
+    start: number,
+    end: number,
+    marker: string
+) {
     if (start === end) {
         return { text, start, end };
     }
@@ -238,7 +281,7 @@ export function formatSelection(text, start, end, marker) {
     };
 }
 
-export function validateDocument(doc) {
+export function validateDocument(doc: EmailDocument): EmailDocument {
     if (
         !doc ||
         !Array.isArray(doc.blocks) ||
@@ -253,7 +296,7 @@ export function validateDocument(doc) {
         'firstName',
         'projectName',
         'footer'
-    ]) {
+    ] as const) {
         if (
             typeof doc[field] !== 'string' ||
             doc[field].length > (field === 'footer' ? 2000 : 998)
@@ -280,7 +323,7 @@ export function validateDocument(doc) {
         ) {
             throw new Error('Choose left, center, right or justify alignment.');
         }
-        for (const key of ['text', 'caption', 'alt', 'values']) {
+        for (const key of ['text', 'caption', 'alt', 'values'] as const) {
             if (
                 block[key] !== undefined &&
                 (typeof block[key] !== 'string' || block[key].length > 5000)
@@ -295,7 +338,7 @@ export function validateDocument(doc) {
             throw new Error('Select a project GIF.');
         }
         if (block.type === 'button') {
-            const url = new URL(block.url);
+            const url = new URL(block.url || '');
             if (url.protocol !== 'https:' || url.username || url.password) {
                 throw new Error('Buttons need a public HTTPS link.');
             }

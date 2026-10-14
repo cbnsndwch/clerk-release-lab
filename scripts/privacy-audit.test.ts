@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { inspect } from './privacy-audit.mjs';
+import { inspect } from './privacy-audit.ts';
 
-test('privacy guard rejects credentials, identifiers and personal artifacts without echoing their values', () => {
+void test('privacy guard rejects credentials, identifiers and personal artifacts without echoing their values', () => {
     const values = [
         ['credential', 'sk_live_' + 'A'.repeat(32)],
         ['Clerk identifier', 'ins_' + 'B'.repeat(27)],

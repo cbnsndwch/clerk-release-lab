@@ -17,7 +17,7 @@ The code panel shows the native JavaScript backend SDK plus framework examples a
 
 ## Enable live email with your own instance
 
-Copy `.env.example` to `.env.local` and set `CLERK_EMAIL_SECRET_KEY` to your own production secret key. Your instance needs transactional email access and a configured sender domain. The server discovers the primary domain and uses `demo@<your-domain>` as the sender; change the sender in `scripts/demo/email.mjs` if your setup requires a different local part.
+Copy `.env.example` to `.env.local` and set `CLERK_EMAIL_SECRET_KEY` to your own production secret key. Your instance needs transactional email access and a configured sender domain. The server discovers the primary domain and uses `demo@<your-domain>` as the sender; change the sender in `scripts/demo/email.ts` if your setup requires a different local part.
 
 For GIFs to display in delivered email, set `DEMO_TUNNEL=true` and install [cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/), or set `DEMO_PUBLIC_BASE_URL` to an HTTPS proxy pointing at port 4319. Alternatively host the two sample GIFs yourself and set `DEMO_ASSET_BASE_URL` to that directory. Sending image blocks is blocked until an HTTPS asset URL is available.
 
@@ -66,10 +66,14 @@ References: [Device Authorization Grant](https://clerk.com/docs/guides/configure
 
 Tooling uses pnpm 12.5.1, Node 24+, and Oxc (`oxlint` and `oxfmt`).
 `.nvmrc`, EditorConfig, and explicit Oxc configs keep local editing and CI
-consistent. CI installs from the frozen pnpm lockfile and cancels superseded runs.
+consistent. App and test source use TypeScript with strict checking. Node 24 runs
+the server and tests directly; esbuild bundles the React TSX client. Generated
+email exports remain self-contained JavaScript modules for portability.
+CI installs from the frozen pnpm lockfile and cancels superseded runs.
 
 ```sh
 pnpm lint
+pnpm typecheck
 pnpm lint:fix
 pnpm format
 pnpm format:check
@@ -77,7 +81,7 @@ pnpm test
 pnpm gate
 ```
 
-`pnpm gate` (also available as `pnpm check`) runs formatting, linting, the build
+`pnpm gate` (also available as `pnpm check`) runs formatting, linting, strict TypeScript checking, the build
 and Node test suite, and the privacy audit. Stage new source files before running
 the privacy audit so it can inspect the intended Git contents.
 

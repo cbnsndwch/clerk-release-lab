@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { AuthDemo } from './auth.mjs';
-import { createAssetServer } from './email.mjs';
+import { AuthDemo } from './auth.ts';
+import { createAssetServer } from './email.ts';
+import type { FetchImpl } from './types.ts';
 
 const issuer = 'https://issuer.example';
 const discovery = {
@@ -17,9 +19,9 @@ const discovery = {
     userinfo_endpoint: `${issuer}/userinfo`,
     revocation_endpoint: `${issuer}/revoke`
 };
-function lab(fetchImpl) {
+function lab(fetchImpl: FetchImpl) {
     let clock = 100000;
-    const delays = [];
+    const delays: number[] = [];
     const auth = new AuthDemo({
         secretKey: 'sk_test_NOT_REAL',
         configPath: 'unused',
@@ -38,16 +40,16 @@ function lab(fetchImpl) {
     return {
         auth,
         delays,
-        advance: ms => {
+        advance: (ms: number) => {
             clock += ms;
         }
     };
 }
 
-test('setup changes only development CIMD advertising and never persists a secret', async t => {
+void test('setup changes only development CIMD advertising and never persists a secret', async t => {
     const dir = await mkdtemp(join(tmpdir(), 'rack-auth-'));
     t.after(() => rm(dir, { recursive: true, force: true }));
-    const calls = [];
+    const calls: { url: string; options: RequestInit }[] = [];
     const auth = new AuthDemo({
         secretKey: 'sk_test_NOT_REAL',
         configPath: join(dir, 'config.json'),
@@ -84,7 +86,7 @@ test('setup changes only development CIMD advertising and never persists a secre
     await auth.init();
     assert.equal(auth.ready, true);
     const patch = calls.find(call => call.options.method === 'PATCH');
-    assert.deepEqual(JSON.parse(patch.options.body), {
+    assert.deepEqual(JSON.parse(patch!.options.body as string), {
         client_id_metadata_documents_advertised: true
     });
     const config = await readFile(join(dir, 'config.json'), 'utf8');
@@ -94,7 +96,7 @@ test('setup changes only development CIMD advertising and never persists a secre
     await assert.rejects(prod.init(), /development/);
 });
 
-test('device polling honors interval and slow_down; snapshots hide device codes and tokens', async () => {
+void test('device polling honors interval and slow_down; snapshots hide device codes and tokens', async () => {
     const pollReplies = [
         { error: 'authorization_pending' },
         { error: 'slow_down' },
@@ -122,7 +124,7 @@ test('device polling honors interval and slow_down; snapshots hide device codes 
             return Response.json({ sub: 'user_mock', name: 'Demo builder' });
         }
         const value = pollReplies.shift();
-        return Response.json(value, { status: value.error ? 400 : 200 });
+        return Response.json(value, { status: value?.error ? 400 : 200 });
     });
     await auth.startDevice();
     assert.deepEqual(delays, [5000]);
@@ -130,11 +132,11 @@ test('device polling honors interval and slow_down; snapshots hide device codes 
     await auth.pollDevice();
     advance(5000);
     await auth.pollDevice();
-    assert.equal(auth.device.interval, 10);
+    assert.equal(auth.device!.interval, 10);
     assert.equal(delays.at(-1), 10000);
     advance(10000);
     await auth.pollDevice();
-    assert.equal(auth.device.phase, 'authorized');
+    assert.equal(auth.device!.phase, 'authorized');
     const snapshot = JSON.stringify(auth.snapshot());
     for (const secret of [
         'DEVICE_PRIVATE',
@@ -145,10 +147,10 @@ test('device polling honors interval and slow_down; snapshots hide device codes 
         assert.ok(!snapshot.includes(secret));
     }
     assert.ok(snapshot.includes('ABCD-EFGH'));
-    assert.equal(auth.device.profile.sub, 'user_mock');
+    assert.equal(auth.device!.profile!.sub, 'user_mock');
 });
 
-test('device denial stops polling and expiry stops without another token request', async () => {
+void test('device denial stops polling and expiry stops without another token request', async () => {
     let tokenCalls = 0;
     const { auth, delays, advance } = lab(async url => {
         if (url.endsWith('/device')) {
@@ -166,22 +168,22 @@ test('device denial stops polling and expiry stops without another token request
     await auth.startDevice();
     advance(5000);
     await auth.pollDevice();
-    assert.equal(auth.device.phase, 'denied');
+    assert.equal(auth.device!.phase, 'denied');
     assert.equal(delays.length, 1);
     await auth.startDevice();
     advance(11000);
     await auth.pollDevice();
-    assert.equal(auth.device.phase, 'expired');
+    assert.equal(auth.device!.phase, 'expired');
     assert.equal(tokenCalls, 1);
 });
 
-test('CIMD callback validates state, issuer and one-time use; PKCE verifier stays private', async () => {
-    let tokenBody;
+void test('CIMD callback validates state, issuer and one-time use; PKCE verifier stays private', async () => {
+    let tokenBody: URLSearchParams | undefined;
     const { auth } = lab(async (url, options) => {
         if (url.endsWith('/userinfo')) {
             return Response.json({ sub: 'user_mock', name: 'Demo builder' });
         }
-        tokenBody = new URLSearchParams(options.body);
+        tokenBody = new URLSearchParams(options.body as string);
         return Response.json({
             access_token: 'ACCESS_PRIVATE',
             refresh_token: 'REFRESH_PRIVATE',
@@ -190,16 +192,16 @@ test('CIMD callback validates state, issuer and one-time use; PKCE verifier stay
         });
     });
     auth.startCimd();
-    const session = auth.cimd;
+    const session = auth.cimd!;
     assert.equal(
         session.challenge,
-        createHash('sha256').update(session.verifier).digest('base64url')
+        createHash('sha256').update(session.verifier!).digest('base64url')
     );
     assert.equal(
-        auth.metadata().client_id,
+        auth.metadata()!.client_id,
         'https://client.example/oauth/client-metadata.json'
     );
-    assert.ok(!JSON.stringify(auth.snapshot()).includes(session.verifier));
+    assert.ok(!JSON.stringify(auth.snapshot()).includes(session.verifier!));
     await assert.rejects(
         auth.callback(
             new URL(
@@ -221,27 +223,32 @@ test('CIMD callback validates state, issuer and one-time use; PKCE verifier stay
     );
     const verifier = session.verifier;
     await auth.callback(callback);
-    assert.equal(auth.cimd.phase, 'connected');
-    assert.equal(tokenBody.get('code_verifier'), verifier);
-    assert.equal(tokenBody.get('client_id'), auth.metadata().client_id);
-    assert.equal(tokenBody.has('client_secret'), false);
+    assert.equal(auth.cimd!.phase, 'connected');
+    assert.equal(tokenBody!.get('code_verifier'), verifier);
+    assert.equal(tokenBody!.get('client_id'), auth.metadata()!.client_id);
+    assert.equal(tokenBody!.has('client_secret'), false);
     await assert.rejects(auth.callback(callback), /state/);
     assert.ok(!JSON.stringify(auth.snapshot()).includes('ACCESS_PRIVATE'));
 });
 
-test('public demo exposes metadata and a protected read-only MCP tool, never local APIs', async t => {
+void test('public demo exposes metadata and a protected read-only MCP tool, never local APIs', async t => {
     const { auth } = lab(async () => Response.json({ sub: 'user_mock' }));
     auth.cimd = {
         phase: 'connected',
+        challenge: 'challenge',
+        clientId: 'client',
+        redirectUri: 'https://client.example/callback',
+        expiresAt: Date.now() + 10000,
+        authorizationUrl: 'https://issuer.example/authorize',
         tokens: { access_token: 'ACCESS_PRIVATE', scope: 'openid profile' }
     };
     const server = createAssetServer(auth);
-    await new Promise(done => server.listen(0, '127.0.0.1', done));
-    t.after(() => new Promise(done => server.close(done)));
-    const base = `http://127.0.0.1:${server.address().port}`;
+    await new Promise<void>(done => server.listen(0, '127.0.0.1', done));
+    t.after(() => new Promise<void>(done => server.close(() => done())));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const missing = await fetch(base + '/mcp', { method: 'POST', body: '{}' });
     assert.equal(missing.status, 401);
-    assert.match(missing.headers.get('www-authenticate'), /resource_metadata/);
+    assert.match(missing.headers.get('www-authenticate')!, /resource_metadata/);
     const wrong = await fetch(base + '/mcp', {
         method: 'POST',
         headers: { Authorization: 'Bearer WRONG' },
@@ -279,7 +286,7 @@ test('public demo exposes metadata and a protected read-only MCP tool, never loc
     assert.match(value.result.content[0].text, /Compute Shelf/);
     assert.match(value.result.content[0].text, /Synthetic sample animation/);
     assert.ok(!JSON.stringify(value).includes('ACCESS_PRIVATE'));
-    auth.cimd.tokens.scope = 'openid';
+    auth.cimd!.tokens!.scope = 'openid';
     assert.equal(
         (
             await fetch(base + '/mcp', {

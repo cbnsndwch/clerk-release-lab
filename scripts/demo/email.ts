@@ -8,16 +8,24 @@ import { parseEnv } from 'node:util';
 
 import { createClerkClient } from '@clerk/backend';
 
-import { AuthDemo } from './auth.mjs';
-import { ASSETS } from './model.js';
-import { renderDocument } from './render.mjs';
+import { AuthDemo } from './auth.ts';
+import { ASSETS } from './model.ts';
+import { renderDocument } from './render.ts';
+import type {
+    ComposeInput,
+    EmailBody,
+    EmailState,
+    EmailAttempt,
+    FetchImpl
+} from './types.ts';
+import { asError } from './types.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../..');
 const apiUrl = 'https://api.clerk.com/v1';
 const addressPattern = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 
-function address(value) {
+function address(value: unknown): string {
     if (
         typeof value !== 'string' ||
         !addressPattern.test(value) ||
@@ -28,16 +36,23 @@ function address(value) {
     return value;
 }
 
-export function sdkPayload(body) {
+export function sdkPayload(body: EmailBody) {
     const { to, reply_to, ...rest } = body;
     return {
         ...rest,
-        to: to.user_id ? { userId: to.user_id } : to,
+        to:
+            'user_id' in to && to.user_id
+                ? { userId: to.user_id }
+                : { address: to.address! },
         ...(reply_to ? { replyTo: reply_to } : {})
     };
 }
 
-async function compose(input, domain, assetBase) {
+async function compose(
+    input: Partial<ComposeInput> | string,
+    domain: string,
+    assetBase: string
+): Promise<EmailBody> {
     // Retain the original simple script interface for smoke tests and saved demo sessions.
     if (typeof input === 'string') {
         return {
@@ -56,18 +71,22 @@ async function compose(input, domain, assetBase) {
             'GIF delivery URLs are still starting. Wait a moment and try again.'
         );
     }
+    if (!input.document) {
+        throw new Error('Choose an email template first.');
+    }
+    const recipient = input.recipient || '';
     const rendered = await renderDocument(input.document, assetBase);
     const to =
         input.recipientMode === 'user'
-            ? { user_id: input.recipient }
-            : { address: address(input.recipient) };
+            ? { user_id: recipient }
+            : { address: address(recipient) };
     if (
         input.recipientMode === 'user' &&
         !/^user_[a-zA-Z0-9]+$/.test(input.recipient ?? '')
     ) {
         throw new Error('Enter a valid Clerk user ID.');
     }
-    const body = {
+    const body: EmailBody = {
         to,
         from: { address: `demo@${domain}`, name: 'Example Workshop' },
         subject: rendered.subject,
@@ -77,7 +96,7 @@ async function compose(input, domain, assetBase) {
     if (input.replyTo) {
         body.reply_to = { address: address(input.replyTo) };
     }
-    for (const field of ['cc', 'bcc']) {
+    for (const field of ['cc', 'bcc'] as const) {
         if (input[field]?.length) {
             if (!Array.isArray(input[field]) || input[field].length > 49) {
                 throw new Error('Too many recipients.');
@@ -85,7 +104,7 @@ async function compose(input, domain, assetBase) {
             body[field] = input[field].map(address);
         }
     }
-    const all = [input.recipient, ...(body.cc || []), ...(body.bcc || [])];
+    const all = [recipient, ...(body.cc || []), ...(body.bcc || [])];
     if (
         all.length > 50 ||
         new Set(all.map(value => value.toLowerCase())).size !== all.length
@@ -127,7 +146,32 @@ async function compose(input, domain, assetBase) {
     return body;
 }
 
+type SdkSend = ReturnType<typeof createClerkClient>['emails']['create'];
+interface EmailOptions {
+    secretKey: string;
+    domain: string;
+    statePath: string;
+    fetchImpl?: FetchImpl;
+    sdkImpl?: SdkSend;
+    assetBase?: string;
+}
+interface EmailResponse {
+    id?: string;
+    status?: string;
+    errors?: { code: string }[];
+}
 export class EmailDemo {
+    declare secretKey: string;
+    declare domain: string;
+    declare statePath: string;
+    declare fetchImpl: FetchImpl;
+    declare sdkImpl: SdkSend | undefined;
+    declare assetBase: string;
+    publicBase = '';
+    auth?: AuthDemo;
+    state: EmailState | null;
+    busy: boolean;
+
     constructor({
         secretKey,
         domain,
@@ -135,7 +179,7 @@ export class EmailDemo {
         fetchImpl = fetch,
         sdkImpl,
         assetBase = ''
-    }) {
+    }: EmailOptions) {
         Object.assign(this, {
             secretKey,
             domain,
@@ -157,7 +201,8 @@ export class EmailDemo {
                 throw new Error('Saved demo belongs to another sender domain.');
             }
             this.state = stored;
-        } catch (error) {
+        } catch (caught) {
+            const error = asError(caught);
             if (error.code !== 'ENOENT') {
                 throw error;
             }
@@ -171,7 +216,20 @@ export class EmailDemo {
         });
         await rename(temp, this.statePath);
     }
-    async act(action, input = {}) {
+    async act(
+        action: 'reset',
+        input?: Partial<ComposeInput> | string
+    ): Promise<{ reset: boolean }>;
+    async act(
+        action: 'send' | 'retry' | 'conflict' | 'status',
+        input?: Partial<ComposeInput> | string
+    ): Promise<EmailAttempt>;
+    async act(
+        action: string,
+        input?: Partial<ComposeInput> | string
+    ): Promise<EmailAttempt | { reset: boolean }>;
+    async act(action: string, input: Partial<ComposeInput> | string = {}) {
+        const options = typeof input === 'string' ? {} : input;
         if (this.busy) {
             throw new Error(
                 'A request is already running. Wait for it to finish.'
@@ -196,7 +254,7 @@ export class EmailDemo {
                     );
                 }
                 const body = await compose(input, this.domain, this.assetBase);
-                const key = input.key || `rack_demo_${randomUUID()}`;
+                const key = options.key || `rack_demo_${randomUUID()}`;
                 if (!/^[a-zA-Z0-9_-]{1,255}$/.test(key)) {
                     throw new Error('Invalid idempotency key.');
                 }
@@ -218,12 +276,12 @@ export class EmailDemo {
                 body.subject += ' (changed)';
             }
             const transport =
-                input.transport === 'sdk' && action !== 'status'
+                options.transport === 'sdk' && action !== 'status'
                     ? 'sdk'
                     : 'api';
-            let outcome;
+            let outcome: EmailAttempt;
             try {
-                let result, http;
+                let result: EmailResponse, http: number;
                 if (transport === 'sdk') {
                     const send =
                         this.sdkImpl ||
@@ -237,7 +295,7 @@ export class EmailDemo {
                     http = 200;
                 } else {
                     const response = await this.fetchImpl(
-                        `${apiUrl}/email${action === 'status' ? `/${encodeURIComponent(sent.id)}` : ''}`,
+                        `${apiUrl}/email${action === 'status' ? `/${encodeURIComponent(sent!.id!)}` : ''}`,
                         {
                             method: action === 'status' ? 'GET' : 'POST',
                             headers: {
@@ -270,7 +328,8 @@ export class EmailDemo {
                     errorCodes: result.errors?.map(error => error.code),
                     at: new Date().toISOString()
                 };
-            } catch (error) {
+            } catch (caught) {
+                const error = asError(caught);
                 outcome = error.status
                     ? {
                           action,
@@ -297,7 +356,7 @@ export class EmailDemo {
     }
 }
 
-export function createAssetServer(auth) {
+export function createAssetServer(auth?: AuthDemo) {
     const allowed = new Set(ASSETS.map(asset => `/${asset.file}`));
     return createServer(async (request, response) => {
         if (auth) {
@@ -316,8 +375,8 @@ export function createAssetServer(auth) {
             }
         }
         if (
-            !['GET', 'HEAD'].includes(request.method) ||
-            !allowed.has(request.url)
+            !['GET', 'HEAD'].includes(request.method || '') ||
+            !allowed.has(request.url || '')
         ) {
             response.writeHead(404);
             response.end();
@@ -325,7 +384,7 @@ export function createAssetServer(auth) {
         }
         try {
             const bytes = await readFile(
-                resolve(here, 'assets', request.url.slice(1))
+                resolve(here, 'assets', request.url!.slice(1))
             );
             response.writeHead(200, {
                 'Content-Type': 'image/gif',
@@ -341,7 +400,7 @@ export function createAssetServer(auth) {
     });
 }
 
-export async function createDemoServer(demo) {
+export async function createDemoServer(demo: EmailDemo) {
     const token = randomUUID();
     const page = (await readFile(resolve(here, 'email.html'), 'utf8')).replace(
         'CSRF_TOKEN',
@@ -355,7 +414,7 @@ export async function createDemoServer(demo) {
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; frame-src 'self' about:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     };
     return createServer(async (request, response) => {
-        function json(status, value) {
+        function json(status: number, value: unknown) {
             response.writeHead(status, {
                 ...headers,
                 'Content-Type': 'application/json'
@@ -371,7 +430,7 @@ export async function createDemoServer(demo) {
             return;
         }
         try {
-            const staticFiles = {
+            const staticFiles: Record<string, [string, string]> = {
                 '/': ['email.html', 'text/html; charset=utf-8'],
                 '/composer.js': [
                     '../../.local/demo/composer.js',
@@ -380,8 +439,8 @@ export async function createDemoServer(demo) {
                 '/studio.css': ['studio.css', 'text/css'],
                 '/auth.css': ['auth.css', 'text/css']
             };
-            if (request.method === 'GET' && staticFiles[request.url]) {
-                const [file, type] = staticFiles[request.url];
+            if (request.method === 'GET' && staticFiles[request.url || '']) {
+                const [file, type] = staticFiles[request.url || ''];
                 const body =
                     request.url === '/'
                         ? page
@@ -399,7 +458,7 @@ export async function createDemoServer(demo) {
                     'Content-Type': 'image/gif'
                 });
                 response.end(
-                    await readFile(resolve(here, request.url.slice(1)))
+                    await readFile(resolve(here, request.url!.slice(1)))
                 );
                 return;
             }
@@ -425,7 +484,9 @@ export async function createDemoServer(demo) {
             }
             if (request.method === 'POST' && request.url?.startsWith('/api/')) {
                 const supplied = Buffer.from(
-                    request.headers['x-demo-token'] ?? ''
+                    typeof request.headers['x-demo-token'] === 'string'
+                        ? request.headers['x-demo-token']
+                        : ''
                 );
                 const expected = Buffer.from(token);
                 if (
@@ -452,7 +513,7 @@ export async function createDemoServer(demo) {
                     json(
                         200,
                         await demo.auth.act(
-                            request.url.slice('/api/auth/'.length)
+                            request.url!.slice('/api/auth/'.length)
                         )
                     );
                     return;
@@ -470,7 +531,7 @@ export async function createDemoServer(demo) {
                 json(
                     200,
                     await demo.act(
-                        request.url.slice(5),
+                        request.url!.slice(5),
                         typeof input.document === 'object'
                             ? input
                             : (input.recipient ?? input)
@@ -479,22 +540,24 @@ export async function createDemoServer(demo) {
                 return;
             }
             json(404, { error: 'Not found.' });
-        } catch (error) {
+        } catch (caught) {
+            const error = asError(caught);
             json(400, { error: error.message });
         }
     });
 }
 
 async function main() {
-    let local = {};
+    let local: Record<string, string | undefined> = {};
     try {
         local = parseEnv(await readFile(resolve(root, '.env.local'), 'utf8'));
-    } catch (error) {
+    } catch (caught) {
+        const error = asError(caught);
         if (error.code !== 'ENOENT') {
             throw error;
         }
     }
-    const setting = name => process.env[name] ?? local[name] ?? '';
+    const setting = (name: string) => process.env[name] ?? local[name] ?? '';
     const secretKey = setting('CLERK_EMAIL_SECRET_KEY');
     let domain = 'example.com';
     if (secretKey) {
@@ -515,8 +578,10 @@ async function main() {
                 `Production key check failed: HTTP ${response.status}.`
             );
         }
-        const domains = await response.json();
-        domain = domains.data?.find(item => !item.is_satellite)?.name;
+        const domains = (await response.json()) as {
+            data?: { is_satellite?: boolean; name: string }[];
+        };
+        domain = domains.data?.find(item => !item.is_satellite)?.name || '';
         if (!domain) {
             throw new Error('No primary production domain found.');
         }
@@ -579,7 +644,7 @@ async function main() {
         console.log(`Email studio: http://127.0.0.1:${port}`)
     );
     assets.listen(assetPort, '127.0.0.1');
-    let tunnel;
+    let tunnel: ReturnType<typeof spawn> | undefined;
     if (!demo.publicBase && setting('DEMO_TUNNEL') === 'true') {
         tunnel = spawn(
             'cloudflared',
@@ -598,7 +663,7 @@ async function main() {
                 'cloudflared is unavailable. Set DEMO_ASSET_BASE_URL to a public HTTPS asset directory.'
             )
         );
-        tunnel.stderr.on('data', chunk => {
+        tunnel.stderr!.on('data', chunk => {
             const match = String(chunk).match(
                 /https:\/\/[a-z0-9-]+\.trycloudflare\.com/
             );

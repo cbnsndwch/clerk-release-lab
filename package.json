@@ -6,16 +6,17 @@
     "license": "MIT",
     "type": "module",
     "scripts": {
-        "build": "node scripts/demo/build.mjs",
-        "start": "pnpm build && node scripts/demo/email.mjs",
-        "test": "pnpm build && node --test scripts/demo/*.test.mjs scripts/*.test.mjs",
-        "check": "pnpm format:check && pnpm lint && pnpm test && pnpm privacy",
+        "build": "node scripts/demo/build.ts",
+        "start": "pnpm build && node scripts/demo/email.ts",
+        "test": "pnpm build && node --test scripts/demo/*.test.ts scripts/*.test.ts",
+        "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm privacy",
         "format": "oxfmt .",
-        "privacy": "node scripts/privacy-audit.mjs",
-        "lint": "oxlint scripts",
-        "lint:fix": "oxlint --fix scripts",
+        "privacy": "node scripts/privacy-audit.ts",
+        "lint": "oxlint --type-aware scripts",
+        "lint:fix": "oxlint --type-aware --fix scripts",
         "format:check": "oxfmt --check .",
-        "gate": "pnpm check"
+        "gate": "pnpm check",
+        "typecheck": "tsc --noEmit"
     },
     "dependencies": {
         "@clerk/backend": "3.23.2",
@@ -27,8 +28,14 @@
         "react-email": "6.11.1"
     },
     "devDependencies": {
+        "@types/node": "24.10.0",
+        "@types/qrcode": "1.5.6",
+        "@types/react": "19.3.0",
+        "@types/react-dom": "19.3.0",
         "oxfmt": "0.70.0",
-        "oxlint": "1.85.0"
+        "oxlint": "1.85.0",
+        "oxlint-tsgolint": "7.0.2001",
+        "typescript": "5.9.3"
     },
     "engines": {
         "node": ">=24.0.0",
