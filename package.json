@@ -1,33 +1,38 @@
 {
-  "name": "clerk-release-lab",
-  "version": "0.1.0",
-  "private": true,
-  "description": "A community demo of Clerk transactional email, device authorization, and MCP with Client ID Metadata Documents.",
-  "license": "MIT",
-  "type": "module",
-  "scripts": {
-    "build": "node scripts/demo/build.mjs",
-    "start": "npm run build && node scripts/demo/email.mjs",
-    "pretest": "npm run build",
-    "test": "node --test scripts/demo/*.test.mjs scripts/*.test.mjs",
-    "check": "oxlint scripts && oxfmt --check . && npm test && npm run privacy",
-    "format": "oxfmt .",
-    "privacy": "node scripts/privacy-audit.mjs"
-  },
-  "dependencies": {
-    "@clerk/backend": "3.23.2",
-    "esbuild": "0.28.2",
-    "lucide-react": "1.47.0",
-    "qrcode": "1.5.4",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "react-email": "6.11.1"
-  },
-  "devDependencies": {
-    "oxfmt": "0.67.0",
-    "oxlint": "1.82.0"
-  },
-  "engines": {
-    "node": ">=22.0.0"
-  }
+    "name": "clerk-release-lab",
+    "version": "0.1.0",
+    "private": true,
+    "description": "A community demo of Clerk transactional email, device authorization, and MCP with Client ID Metadata Documents.",
+    "license": "MIT",
+    "type": "module",
+    "scripts": {
+        "build": "node scripts/demo/build.mjs",
+        "start": "pnpm build && node scripts/demo/email.mjs",
+        "test": "pnpm build && node --test scripts/demo/*.test.mjs scripts/*.test.mjs",
+        "check": "pnpm format:check && pnpm lint && pnpm test && pnpm privacy",
+        "format": "oxfmt .",
+        "privacy": "node scripts/privacy-audit.mjs",
+        "lint": "oxlint scripts",
+        "lint:fix": "oxlint --fix scripts",
+        "format:check": "oxfmt --check .",
+        "gate": "pnpm check"
+    },
+    "dependencies": {
+        "@clerk/backend": "3.23.2",
+        "esbuild": "0.28.2",
+        "lucide-react": "1.47.0",
+        "qrcode": "1.5.4",
+        "react": "19.3.0",
+        "react-dom": "19.3.0",
+        "react-email": "6.11.1"
+    },
+    "devDependencies": {
+        "oxfmt": "0.70.0",
+        "oxlint": "1.85.0"
+    },
+    "engines": {
+        "node": ">=24.0.0",
+        "pnpm": ">=12.5.1"
+    },
+    "packageManager": "pnpm@12.5.1"
 }

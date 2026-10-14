@@ -1,0 +1,39 @@
+{
+    "$schema": "./node_modules/oxfmt/configuration_schema.json",
+    "useTabs": false,
+    "tabWidth": 4,
+    "printWidth": 80,
+    "singleQuote": true,
+    "semi": true,
+    "trailingComma": "none",
+    "arrowParens": "avoid",
+    "bracketSpacing": true,
+    "endOfLine": "lf",
+    "overrides": [
+        {
+            "files": ["*.yml", "*.yaml"],
+            "options": {
+                "tabWidth": 2
+            }
+        }
+    ],
+    "ignorePatterns": [
+        "**/dist/**",
+        "**/node_modules/**",
+        ".local/**",
+        "coverage/**",
+        "pnpm-lock.yaml"
+    ],
+    "proseWrap": "preserve",
+    "sortImports": {
+        "newlinesBetween": true,
+        "sortSideEffects": false,
+        "groups": [
+            "builtin",
+            "external",
+            "parent",
+            ["sibling", "index"],
+            "unknown"
+        ]
+    }
+}

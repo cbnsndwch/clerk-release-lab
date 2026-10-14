@@ -13,3 +13,5 @@ node_modules/
 Thumbs.db
 coverage/
 dist/
+package-lock.json
+yarn.lock

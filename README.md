@@ -4,11 +4,11 @@ A standalone community demo of transactional email, device authorization, and an
 
 ## Try the composer without credentials
 
-Install Node.js 22 or newer, then:
+Install Node.js 24 or newer and pnpm 12.5.1 (pinned in `packageManager`), then:
 
 ```sh
-npm ci
-npm start
+pnpm install --frozen-lockfile
+pnpm start
 ```
 
 Open <http://127.0.0.1:4318>. Preview mode makes no Clerk API requests, creates no tunnel, and cannot send email. It includes three templates, drag-and-drop blocks, selected-text formatting, paragraph alignment, undo/redo, personalization, responsive previews, and HTML, text, React Email source, and JSON exports. Formatting buttons insert editable markers: `**bold**`, `*italic*`, `__underline__`, and `~~strike~~`.
@@ -21,7 +21,7 @@ Copy `.env.example` to `.env.local` and set `CLERK_EMAIL_SECRET_KEY` to your own
 
 For GIFs to display in delivered email, set `DEMO_TUNNEL=true` and install [cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/), or set `DEMO_PUBLIC_BASE_URL` to an HTTPS proxy pointing at port 4319. Alternatively host the two sample GIFs yourself and set `DEMO_ASSET_BASE_URL` to that directory. Sending image blocks is blocked until an HTTPS asset URL is available.
 
-Restart `npm start`, open the composer, and deliberately click **Send test** with a recipient you control. Retry reuses the frozen message and idempotency key; the conflict control changes the payload while reusing the key. No email is sent on startup or by the test suite. The API and limits shown here reflect the October 2026 experimental release; confirm availability in [Clerk's documentation](https://clerk.com/docs) for your instance.
+Restart `pnpm start`, open the composer, and deliberately click **Send test** with a recipient you control. Retry reuses the frozen message and idempotency key; the conflict control changes the payload while reusing the key. No email is sent on startup or by the test suite. The API and limits shown here reflect the October 2026 experimental release; confirm availability in [Clerk's documentation](https://clerk.com/docs) for your instance.
 
 ## Enable the OAuth labs
 
@@ -64,10 +64,22 @@ References: [Device Authorization Grant](https://clerk.com/docs/guides/configure
 
 ## Development and privacy
 
+Tooling uses pnpm 12.5.1, Node 24+, and Oxc (`oxlint` and `oxfmt`).
+`.nvmrc`, EditorConfig, and explicit Oxc configs keep local editing and CI
+consistent. CI installs from the frozen pnpm lockfile and cancels superseded runs.
+
 ```sh
-npm test
-npm run check
+pnpm lint
+pnpm lint:fix
+pnpm format
+pnpm format:check
+pnpm test
+pnpm gate
 ```
+
+`pnpm gate` (also available as `pnpm check`) runs formatting, linting, the build
+and Node test suite, and the privacy audit. Stage new source files before running
+the privacy audit so it can inspect the intended Git contents.
 
 Tests use synthetic provider responses; they do not send email or approve live OAuth requests. The privacy check inspects staged and tracked files, tracked working copies, and all reachable Git commit blobs for common credentials, real-looking Clerk identifiers, instance domains, temporary tunnel URLs, forbidden runtime files, and image metadata. It is a guardrail, not a proof that arbitrary personal content is safe to publish.
 

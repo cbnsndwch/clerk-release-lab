@@ -1,0 +1,45 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "categories": {
+        "correctness": "warn"
+    },
+    "options": {
+        "maxWarnings": 0
+    },
+    "env": {
+        "node": true,
+        "es2024": true
+    },
+    "plugins": ["import", "react"],
+    "rules": {
+        "curly": ["error", "all"],
+        "import/newline-after-import": [
+            "error",
+            {
+                "count": 1,
+                "exactCount": true,
+                "considerComments": true
+            }
+        ],
+        "no-unused-expressions": "error",
+        "no-var": "error",
+        "prefer-const": "error",
+        "react/jsx-key": "error",
+        "react/no-children-prop": "error"
+    },
+    "ignorePatterns": [
+        "**/dist/**",
+        "**/node_modules/**",
+        ".local/**",
+        "coverage/**"
+    ],
+    "overrides": [
+        {
+            "files": ["**/*.jsx"],
+            "env": {
+                "browser": true,
+                "node": false
+            }
+        }
+    ]
+}
