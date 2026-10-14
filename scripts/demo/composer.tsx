@@ -35,6 +35,7 @@ import {
 } from './model.ts';
 import type { renderDocument } from './render.ts';
 import { LANGUAGES, snippet } from './snippets.ts';
+import { StartHere } from './start-here.tsx';
 import type {
     Alignment,
     Attachment,
@@ -343,7 +344,7 @@ function BlockContent({ block, doc }: { block: Block; doc: EmailDocument }) {
     return null;
 }
 
-function App() {
+function App({ onSetup }: { onSetup: () => void }) {
     const [history, setHistory] = useState<{
         past: EmailDocument[];
         present: EmailDocument;
@@ -556,7 +557,9 @@ function App() {
     async function refresh() {
         const response = await fetch('/api/state');
         if (!response.ok) {
-            throw new Error('Presenter unavailable. Check the SSH tunnel.');
+            throw new Error(
+                'Demo unavailable. Keep pnpm start running, then refresh the page.'
+            );
         }
         const data = await response.json();
         setServer(data);
@@ -568,7 +571,7 @@ function App() {
                 refresh()
                     .then(() => {
                         tell(
-                            'Draft saved in this browser. Production key verified.'
+                            'Draft saved in this browser. Preview and exports are ready; live sending is optional.'
                         );
                     })
                     .catch(err => tell(err.message, true)),
@@ -777,16 +780,20 @@ function App() {
                     <span className="hack-night">community demo</span>
                     <button
                         className="primary"
-                        disabled={!server?.emailEnabled}
+
                         title={
                             server?.emailEnabled
                                 ? 'Send a test email'
                                 : 'Set CLERK_EMAIL_SECRET_KEY in .env.local to enable sending'
                         }
-                        onClick={() => setShowSend(true)}
+                        onClick={() =>
+                            server?.emailEnabled ? setShowSend(true) : onSetup()
+                        }
                     >
                         <Send size={15} />
-                        Send test
+                        {server?.emailEnabled
+                            ? 'Send test'
+                            : 'Enable live sending'}
                     </button>
                 </div>
             </header>
@@ -1780,9 +1787,9 @@ function App() {
                     Email → HTML + text → Clerk
                 </span>
                 <span>
-                    {server?.assetBase
-                        ? 'GIF delivery URLs ready'
-                        : 'Starting GIF delivery URLs…'}{' '}
+                    {server?.assetBase?.startsWith('https://')
+                        ? 'HTTPS GIF URLs configured'
+                        : 'GIFs available in local preview'}{' '}
                     <i
                         className={`dot ${server?.assetBase ? '' : 'waiting'}`}
                     />
@@ -1980,9 +1987,9 @@ function DemoShell() {
         document.title = 'Example Workshop · Clerk Release Lab';
     }, []);
     const [view, setView] = useState(
-        ['device', 'mcp'].includes(location.hash.slice(1))
+        ['start', 'email', 'device', 'mcp'].includes(location.hash.slice(1))
             ? location.hash.slice(1)
-            : 'email'
+            : 'start'
     );
     function choose(next: string) {
         setView(next);
@@ -1990,12 +1997,13 @@ function DemoShell() {
     }
     return (
         <div className="demo-shell">
-            <nav className="demo-switch" aria-label="Hack night demos">
+            <nav className="demo-switch" aria-label="Demo navigation">
                 <span>EXAMPLE WORKSHOP / CLERK RELEASE LAB</span>
                 {[
+                    ['start', '→', 'Start here'],
                     ['email', '01', 'Email studio'],
-                    ['device', '03', 'Device login'],
-                    ['mcp', '04', 'MCP & CIMD']
+                    ['device', '02', 'Device login'],
+                    ['mcp', '03', 'MCP & CIMD']
                 ].map(([id, number, name]) => (
                     <button
                         key={id}
@@ -2008,9 +2016,12 @@ function DemoShell() {
                 ))}
             </nav>
             <div className="demo-surface" hidden={view !== 'email'}>
-                <App />
+                <App onSetup={() => choose('start')} />
             </div>
-            {view !== 'email' && <AuthLab view={view} />}
+            {view === 'start' && <StartHere choose={choose} />}
+            {['device', 'mcp'].includes(view) && (
+                <AuthLab view={view} onSetup={() => choose('start')} />
+            )}
         </div>
     );
 }

@@ -59,6 +59,7 @@ interface AuthOptions {
     cancel?: (timer: NodeJS.Timeout | number | null) => void;
 }
 export class AuthDemo {
+    cimdAdmission: 'compatible' | 'pre-registered' = 'compatible';
     declare secretKey: string;
     declare configPath: string;
     declare getPublicBase: () => string;
@@ -255,8 +256,10 @@ export class AuthDemo {
         if (
             settings.client_id_metadata_documents_only_allow_pre_registered_clients
         ) {
-            throw new Error(
-                'Development CIMD admission requires pre-registration. Add this demo’s metadata URL in Clerk before running CIMD.'
+            this.cimdAdmission = 'pre-registered';
+            this.log(
+                'setup',
+                'Pre-register this demo’s current metadata URL in Clerk before connecting. Existing admission policy preserved.'
             );
         }
         if (!settings.client_id_metadata_documents_advertised) {
@@ -309,6 +312,7 @@ export class AuthDemo {
             ready: this.ready && Boolean(metadata),
             setupError: this.setupError,
             environment: 'development',
+            cimdAdmission: this.cimdAdmission,
             scope,
             issuer: this.discovery?.issuer,
             discovery: this.discovery,

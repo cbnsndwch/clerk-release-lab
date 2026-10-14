@@ -58,7 +58,13 @@ function wireCode(view: string, tab: string, data: AuthSnapshot | null) {
     );
 }
 
-export function AuthLab({ view }: { view: string }) {
+export function AuthLab({
+    view,
+    onSetup
+}: {
+    view: string;
+    onSetup: () => void;
+}) {
     const [data, setData] = useState<AuthSnapshot | null>(null);
     const [tab, setTab] = useState('request');
     const [busy, setBusy] = useState(false);
@@ -157,6 +163,16 @@ export function AuthLab({ view }: { view: string }) {
 
     return (
         <div className="auth-lab">
+            {data && !data.ready && (
+                <div className="setup-prompt">
+                    <span>
+                        Live OAuth needs your development Clerk app and a public
+                        URL. You can explore the email composer without either.
+                    </span>
+                    <button onClick={onSetup}>Open setup checklist</button>
+                </div>
+            )}
+
             <header className="lab-header">
                 <div className="lab-brand">
                     <span>▥</span>
@@ -186,8 +202,8 @@ export function AuthLab({ view }: { view: string }) {
                     <div className="lab-section-title">
                         <span>
                             {isDevice
-                                ? '03 / DEVICE AUTHORIZATION'
-                                : '04 / MCP + CLIENT ID METADATA'}
+                                ? '02 / DEVICE AUTHORIZATION'
+                                : '03 / MCP + CLIENT ID METADATA'}
                         </span>
                         <span
                             className={`lab-phase ${connected ? 'success' : ''}`}

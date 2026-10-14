@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { createServer } from 'node:net';
 import test from 'node:test';
+import { promisify } from 'node:util';
 
 async function freePort() {
     const server = createServer();
@@ -51,6 +52,16 @@ void test('fresh standalone startup previews locally without credentials and blo
     assert.ok(state, 'preview server started');
     assert.equal(state.domain, 'example.com');
     assert.equal(state.emailEnabled, false);
+    const setup = await (await fetch(`${base}/api/setup`)).json();
+    assert.equal(setup.mode, 'preview');
+    assert.equal(setup.groups[0].checks[0].status, 'ready');
+    const doctor = await promisify(execFile)(
+        process.execPath,
+        ['scripts/doctor.ts'],
+        { env: { ...process.env, DEMO_PORT: String(port) } }
+    );
+    assert.match(doctor.stdout, /preview mode/);
+    assert.match(doctor.stdout, /\[TODO\] Production email key/);
     const page = await (await fetch(base)).text();
     const token = page.match(/name="demo-token" content="([^"]+)"/)![1];
     const response = await fetch(`${base}/api/send`, {
@@ -70,4 +81,5 @@ void test('fresh standalone startup previews locally without credentials and blo
     assert.equal((await fetch(`${base}/assets/starter-rack.gif`)).status, 200);
     const publicBase = `http://127.0.0.1:${assetPort}`;
     assert.equal((await fetch(`${publicBase}/api/state`)).status, 404);
+    assert.equal((await fetch(`${publicBase}/api/setup`)).status, 404);
 });

@@ -16,7 +16,8 @@
         "lint:fix": "oxlint --type-aware --fix scripts",
         "format:check": "oxfmt --check .",
         "gate": "pnpm check",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "doctor": "node scripts/doctor.ts"
     },
     "dependencies": {
         "@clerk/backend": "3.23.2",

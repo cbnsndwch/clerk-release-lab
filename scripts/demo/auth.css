@@ -910,3 +910,140 @@
 .mcp-walkthrough .guided-actions {
     margin: 16px 0 0;
 }
+
+.start-here {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 40px max(24px, calc((100vw - 1120px) / 2));
+    background: #0c0e11;
+    color: #e7eaec;
+}
+.start-here h1 {
+    font-size: clamp(28px, 4vw, 42px);
+    letter-spacing: -1px;
+    margin: 14px 0;
+}
+.start-here h2 {
+    font-size: 21px;
+    line-height: 1.35;
+    margin: 0 0 12px;
+}
+.start-here h3 {
+    font-size: 17px;
+    margin: 22px 0 12px;
+    color: #d6b169;
+}
+.start-here p,
+.start-here li {
+    font-size: 14px;
+    line-height: 1.7;
+    color: #aab3b8;
+}
+.start-here a {
+    color: #d6b169;
+    text-underline-offset: 3px;
+}
+.start-intro {
+    max-width: 750px;
+}
+.start-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin: 28px 0;
+}
+.start-options article,
+.first-success {
+    border: 1px solid #333b42;
+    border-radius: 10px;
+    padding: 22px;
+    background: #14171b;
+}
+.start-options h2 {
+    margin-top: 15px;
+}
+.start-options button {
+    margin-top: 10px;
+}
+.first-success {
+    margin-bottom: 32px;
+}
+.first-success ol {
+    padding-left: 20px;
+}
+.first-success li {
+    padding: 4px 0;
+}
+.setup-check {
+    position: relative;
+    border-left: 3px solid #53616a;
+    padding: 16px 18px;
+    background: #14171b;
+    margin-bottom: 10px;
+}
+.setup-check.ready {
+    border-color: #82c6a2;
+}
+.setup-check.error {
+    border-color: #e09a91;
+}
+.setup-check.confirm,
+.setup-check.todo {
+    border-color: #d6b169;
+}
+.setup-check h4 {
+    font-size: 15px;
+    margin: 8px 0;
+}
+.setup-check p {
+    margin: 5px 0;
+}
+.setup-check .setup-action {
+    color: #e7eaec;
+}
+.setup-check a {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 13px;
+}
+.setup-badge {
+    color: #d6b169;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+.setup-check.ready .setup-badge {
+    color: #82c6a2;
+}
+.start-links {
+    padding: 22px 0;
+}
+.setup-prompt {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    color: #d6b169;
+    border-bottom: 1px solid #66563a;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.setup-prompt button {
+    flex-shrink: 0;
+}
+@media (max-width: 850px) {
+    .start-options {
+        grid-template-columns: 1fr;
+    }
+    .setup-prompt {
+        flex-wrap: wrap;
+    }
+    .demo-switch {
+        overflow-x: auto;
+    }
+    .demo-switch button {
+        white-space: nowrap;
+    }
+}

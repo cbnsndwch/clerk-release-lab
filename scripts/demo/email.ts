@@ -11,6 +11,7 @@ import { createClerkClient } from '@clerk/backend';
 import { AuthDemo } from './auth.ts';
 import { ASSETS } from './model.ts';
 import { renderDocument } from './render.ts';
+import { setupReport } from './setup.ts';
 import type {
     ComposeInput,
     EmailBody,
@@ -68,7 +69,7 @@ async function compose(
         !assetBase?.startsWith('https://')
     ) {
         throw new Error(
-            'GIF delivery URLs are still starting. Wait a moment and try again.'
+            'Image blocks need public HTTPS URLs. Open Start here for image hosting setup, or remove the image blocks.'
         );
     }
     if (!input.document) {
@@ -426,7 +427,9 @@ export async function createDemoServer(demo: EmailDemo) {
                 request.headers.host ?? ''
             )
         ) {
-            json(403, { error: 'Use a localhost SSH tunnel.' });
+            json(403, {
+                error: 'Open the demo using http://127.0.0.1:<port> or http://localhost:<port>.'
+            });
             return;
         }
         try {
@@ -460,6 +463,10 @@ export async function createDemoServer(demo: EmailDemo) {
                 response.end(
                     await readFile(resolve(here, request.url!.slice(1)))
                 );
+                return;
+            }
+            if (request.method === 'GET' && request.url === '/api/setup') {
+                json(200, setupReport(demo));
                 return;
             }
             if (request.method === 'GET' && request.url === '/api/state') {

@@ -47,53 +47,62 @@ function lab(fetchImpl: FetchImpl) {
 }
 
 void test('setup changes only development CIMD advertising and never persists a secret', async t => {
-    const dir = await mkdtemp(join(tmpdir(), 'rack-auth-'));
-    t.after(() => rm(dir, { recursive: true, force: true }));
-    const calls: { url: string; options: RequestInit }[] = [];
-    const auth = new AuthDemo({
-        secretKey: 'sk_test_NOT_REAL',
-        configPath: join(dir, 'config.json'),
-        getPublicBase: () => 'https://client.example',
-        fetchImpl: async (url, options) => {
-            calls.push({ url, options });
-            if (url.endsWith('/domains')) {
-                return Response.json({
-                    data: [{ frontend_api_url: issuer, is_satellite: false }]
-                });
+    for (const restricted of [false, true]) {
+        const dir = await mkdtemp(join(tmpdir(), 'rack-auth-'));
+        t.after(() => rm(dir, { recursive: true, force: true }));
+        const calls: { url: string; options: RequestInit }[] = [];
+        const auth = new AuthDemo({
+            secretKey: 'sk_test_NOT_REAL',
+            configPath: join(dir, 'config.json'),
+            getPublicBase: () => 'https://client.example',
+            fetchImpl: async (url, options) => {
+                calls.push({ url, options });
+                if (url.endsWith('/domains')) {
+                    return Response.json({
+                        data: [
+                            { frontend_api_url: issuer, is_satellite: false }
+                        ]
+                    });
+                }
+                if (url.includes('.well-known')) {
+                    return Response.json(discovery);
+                }
+                if (url.endsWith('/instance/oauth_application_settings')) {
+                    return Response.json({
+                        client_id_metadata_documents_advertised: false,
+                        client_id_metadata_documents_only_allow_pre_registered_clients:
+                            restricted
+                    });
+                }
+                if (options.method === 'POST') {
+                    return Response.json({
+                        id: 'oa_demo',
+                        client_id: 'public_id',
+                        client_secret: 'DO_NOT_PERSIST',
+                        name: 'Example Workshop Hack Night Device Demo',
+                        public: true,
+                        device_authorization_grant_enabled: true
+                    });
+                }
+                return Response.json({ data: [] });
             }
-            if (url.includes('.well-known')) {
-                return Response.json(discovery);
-            }
-            if (url.endsWith('/instance/oauth_application_settings')) {
-                return Response.json({
-                    client_id_metadata_documents_advertised: false,
-                    client_id_metadata_documents_only_allow_pre_registered_clients: false
-                });
-            }
-            if (options.method === 'POST') {
-                return Response.json({
-                    id: 'oa_demo',
-                    client_id: 'public_id',
-                    client_secret: 'DO_NOT_PERSIST',
-                    name: 'Example Workshop Hack Night Device Demo',
-                    public: true,
-                    device_authorization_grant_enabled: true
-                });
-            }
-            return Response.json({ data: [] });
-        }
-    });
-    await auth.init();
-    assert.equal(auth.ready, true);
-    const patch = calls.find(call => call.options.method === 'PATCH');
-    assert.deepEqual(JSON.parse(patch!.options.body as string), {
-        client_id_metadata_documents_advertised: true
-    });
-    const config = await readFile(join(dir, 'config.json'), 'utf8');
-    assert.ok(!config.includes('DO_NOT_PERSIST'));
-    assert.ok(!config.includes('sk_test_'));
-    const prod = new AuthDemo({ secretKey: 'sk_live_NOT_REAL' });
-    await assert.rejects(prod.init(), /development/);
+        });
+        await auth.init();
+        assert.equal(auth.ready, true);
+        assert.equal(
+            auth.cimdAdmission,
+            restricted ? 'pre-registered' : 'compatible'
+        );
+        const patch = calls.find(call => call.options.method === 'PATCH');
+        assert.deepEqual(JSON.parse(patch!.options.body as string), {
+            client_id_metadata_documents_advertised: true
+        });
+        const config = await readFile(join(dir, 'config.json'), 'utf8');
+        assert.ok(!config.includes('DO_NOT_PERSIST'));
+        assert.ok(!config.includes('sk_test_'));
+        const prod = new AuthDemo({ secretKey: 'sk_live_NOT_REAL' });
+        await assert.rejects(prod.init(), /development/);
+    }
 });
 
 void test('device polling honors interval and slow_down; snapshots hide device codes and tokens', async () => {
@@ -258,6 +267,7 @@ void test('public demo exposes metadata and a protected read-only MCP tool, neve
     for (const path of [
         '/api/state',
         '/api/auth/state',
+        '/api/setup',
         '/.env.local',
         '/composer.js'
     ]) {
